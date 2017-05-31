@@ -53,8 +53,8 @@ public:
     int GetQ1Q2();
 
     unsigned GetNumMomBins();
-
     unsigned GetNumIpBins();
+    unsigned GetNumPairs();
 
     //N.B. the size of mombins should be NumMomBins+1, where each element represents the low-edge of
     //the corresponding bin, and the one extra element is the upper edge of the last bin.
@@ -94,6 +94,14 @@ public:
 
     void SetTransportRenorm(const double& val);
     double GetTransportRenorm();
+
+    //the input values should be non-negative
+    //please set this condition BEFORE you load the source, else CATS will not save the TotalMomentum at all
+    //The values should be in MeV
+    //if noReload is true, than CATS will not reload the data from the file. The user should
+    void SetTotPairMomCut(const double& minval, const double& maxval);
+    void GetTotPairMomCut(double& minval, double& maxval);
+    void RemoveTotPairMomCut();
 
     void SetMaxPairsPerBin(unsigned mpp);
     unsigned GetMaxPairsPerBin();
@@ -223,6 +231,12 @@ private:
     bool ThetaDependentSource;
     //multiply the source of the transport model by some coefficient
     double TransportRenorm;
+
+    double MinTotPairMom;
+    double MaxTotPairMom;
+    double LoadedMinTotPairMom;
+    double LoadedMaxTotPairMom;
+    bool UseTotMomCut;
     //!------------------------------------------------
 
     //!Variables needed as an input for the numerical calculation
@@ -273,6 +287,7 @@ private:
     double*** RelativeMomentum;
     double*** RelativePosition;
     double*** RelativeCosTheta;
+    double*** TotalPairMomentum;
     unsigned** LoadedPairsPerBin;
 
     bool LoadingComplete;

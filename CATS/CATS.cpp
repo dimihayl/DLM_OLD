@@ -38,6 +38,11 @@ CATS::CATS():
     UseAnalyticSource = false;
     ThetaDependentSource = false;
     TransportRenorm = 1;
+    MinTotPairMom = -1;
+    MaxTotPairMom = 1e100;
+    LoadedMinTotPairMom = -1;
+    LoadedMaxTotPairMom = 1e100;
+    UseTotMomCut = false;
 
     NumPW = NULL;
     MomBin = NULL;
@@ -52,6 +57,7 @@ CATS::CATS():
     RelativeMomentum = NULL;
     RelativePosition = NULL;
     RelativeCosTheta = NULL;
+    TotalPairMomentum = NULL;
     LoadedPairsPerBin = NULL;
 
     ShortRangePotentialUI = NULL;
@@ -94,6 +100,8 @@ void CATS::DelMomIpMp(){
     delete [] RelativeMomentum; RelativeMomentum=NULL;
     delete [] RelativePosition; RelativePosition=NULL;
     delete [] RelativeCosTheta; RelativeCosTheta=NULL;
+
+    RemoveTotPairMomCut();
 }
 
 void CATS::DelIp(){
@@ -260,6 +268,10 @@ unsigned CATS::GetNumMomBins(){
 
 unsigned CATS::GetNumIpBins(){
     return NumIpBins;
+}
+
+unsigned CATS::GetNumPairs(){
+    return NumPairs;
 }
 
 void CATS::SetMomBins(const unsigned& nummombins, const double* mombins){
@@ -552,6 +564,44 @@ void CATS::SetTransportRenorm(const double& val){
 }
 double CATS::GetTransportRenorm(){
     return TransportRenorm;
+}
+
+void CATS::SetTotPairMomCut(const double& minval, const double& maxval){
+    if(minval<0 || maxval<minval){
+        printf("WARNING: Bad input in void CATS::SetTotPairMomCut(const double& minval, const double& maxval)");
+        return;
+    }
+    if(minval==MinTotPairMom && maxval==MaxTotPairMom){
+        return;
+    }
+    //if we set cut conditions outside of the loaded data, we have to reload
+    if(UseTotMomCut==true && LoadingComplete &&
+       (LoadedMinTotPairMom>minval || LoadedMaxTotPairMom<maxval) ){
+        LoadingComplete = false;
+    }
+    MinTotPairMom = minval;
+    MaxTotPairMom = maxval;
+    UseTotMomCut = true;
+    ComputedCorrFunction = false;
+}
+void CATS::GetTotPairMomCut(double& minval, double& maxval){
+    minval = MinTotPairMom;
+    maxval = MaxTotPairMom;
+}
+void CATS::RemoveTotPairMomCut(){
+    MinTotPairMom = -1;
+    MaxTotPairMom = 1e100;
+    if(TotalPairMomentum){
+        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
+                delete [] TotalPairMomentum[uMomBin][uIpBin];
+            }
+            delete [] TotalPairMomentum[uMomBin];
+        }
+        delete [] TotalPairMomentum; TotalPairMomentum=NULL;
+    }
+    UseTotMomCut = false;
+    if(LoadedMinTotPairMom>0 || LoadedMaxTotPairMom<1e100) LoadingComplete = false;
 }
 
 void CATS::SetInputFileName(const char* fname){
@@ -873,6 +923,10 @@ void CATS::KillTheCat(const int& Options){
         break;
     default: break;
     }
+
+    //in case we have a cut on the total momentum, but the array to save it is not present
+    //than the data needs to be reloaded
+    if(UseTotMomCut && !TotalPairMomentum) LoadingComplete=false;
 
     printf("\033[1;37m Stage 1:\033[0m Obtaining the source...");
     if( (!LoadingComplete) && !UseAnalyticSource ){
@@ -1317,14 +1371,27 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
         RelativeMomentum = new double** [NumMomBins];
         RelativePosition = new double** [NumMomBins];
         RelativeCosTheta = new double** [NumMomBins];
+        if(UseTotMomCut) TotalPairMomentum = new double** [NumMomBins];
         for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
             RelativeMomentum[uMomBin] = new double* [NumIpBins];
             RelativePosition[uMomBin] = new double* [NumIpBins];
             RelativeCosTheta[uMomBin] = new double* [NumIpBins];
+            if(UseTotMomCut) TotalPairMomentum[uMomBin] = new double* [NumIpBins];
             for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
                 RelativeMomentum[uMomBin][uIpBin] = new double [MaxPairsPerBin];
                 RelativePosition[uMomBin][uIpBin] = new double [MaxPairsPerBin];
                 RelativeCosTheta[uMomBin][uIpBin] = new double [MaxPairsPerBin];
+                if(UseTotMomCut) TotalPairMomentum[uMomBin][uIpBin] = new double [MaxPairsPerBin];
+            }
+        }
+    }
+
+    if(UseTotMomCut && !TotalPairMomentum){
+        TotalPairMomentum = new double** [NumMomBins];
+        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+            TotalPairMomentum[uMomBin] = new double* [NumIpBins];
+            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
+                TotalPairMomentum[uMomBin][uIpBin] = new double [MaxPairsPerBin];
             }
         }
     }
@@ -1613,6 +1680,11 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                         if(WhichMomBin>=NumMomBins) Selected = false;
                     }
 
+                    //check the total pair momentum condition
+                    if(UseTotMomCut && (TotMom*1000<MinTotPairMom || TotMom*1000>MaxTotPairMom)){
+                        Selected = false;
+                    }
+
                     if(Selected){
                         if(LoadedPairsPerBin[WhichMomBin][WhichIpBin]>=MaxPairsPerBin){
                             Selected = false;
@@ -1625,6 +1697,7 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                     RelativeMomentum[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = RedMomComMeV;
                     RelativePosition[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = RelPosCom*FmToNu;
                     RelativeCosTheta[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = RelCosTh;
+                    if(UseTotMomCut) TotalPairMomentum[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = TotMom*1000;
 
                     //counting the number of pairs coming from the same event. This information is needed when
                     //reweighting the correlation function in the different impact parameter bins
@@ -1635,6 +1708,7 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
 
                     LoadedPairsPerBin[WhichMomBin][WhichIpBin]++;
                     NumPairs++;
+
                 }//if(...)
             }//for(int iePart=0; iePart<NePart; iePart++)
 
@@ -1691,6 +1765,10 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
     }
     else{
         LoadingComplete = true;
+        if(UseTotMomCut){
+            LoadedMinTotPairMom = MinTotPairMom;
+            LoadedMaxTotPairMom = MaxTotPairMom;
+        }
     }
 
     if(LoadingComplete && EventMixing){
@@ -1812,11 +1890,14 @@ void CATS::FoldDataSourceAndWF(){
         return;
     }
 
+    unsigned NumPairsUsed=0;
+
     for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
         unsigned NumberOfPairs = 0;
         double* Stdev;
         Stdev = new double [NumIpBins+1];
         for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
+            NumPairsUsed=0;
             Stdev[uIpBin] = 0;
             CorrFun[uMomBin][uIpBin] = 0;
             if(!MomBinConverged[uMomBin] && ExcludeFailedConvergence){
@@ -1824,6 +1905,9 @@ void CATS::FoldDataSourceAndWF(){
                 continue;
             }
             for(unsigned uPair=0; uPair<LoadedPairsPerBin[uMomBin][uIpBin]; uPair++){
+                if(UseTotMomCut &&
+                   (TotalPairMomentum[uMomBin][uIpBin][uPair]<MinTotPairMom || TotalPairMomentum[uMomBin][uIpBin][uPair]>MaxTotPairMom))
+                   continue;
                 Radius = RelativePosition[uMomBin][uIpBin][uPair];
                 Momentum = RelativeMomentum[uMomBin][uIpBin][uPair];
                 CosTheta = RelativeCosTheta[uMomBin][uIpBin][uPair];
@@ -1839,20 +1923,22 @@ void CATS::FoldDataSourceAndWF(){
                     Stdev[NumIpBins] += TotWF*TotWF;
                 }
 
+                NumPairsUsed++;
+
             }//for(unsigned uPair=0; uPair<LoadedPairsPerMomBin[uMomBin]; uPair++){
             //if there are too few entries, the error is set basically to infinity
-            if(LoadedPairsPerBin[uMomBin][uIpBin]<8){
-                CorrFun[uMomBin][uIpBin] =  LoadedPairsPerBin[uMomBin][uIpBin]?
-                                            CorrFun[uMomBin][uIpBin]/double(LoadedPairsPerBin[uMomBin][uIpBin]):0;
+            if(NumPairsUsed<8){
+                CorrFun[uMomBin][uIpBin] =  NumPairsUsed?
+                                            CorrFun[uMomBin][uIpBin]/double(NumPairsUsed):0;
                 CorrFunError[uMomBin][uIpBin] = 100;
             }
             else{
-                CorrFun[uMomBin][uIpBin] /= double(LoadedPairsPerBin[uMomBin][uIpBin]);
-                Stdev[uIpBin] /= double(LoadedPairsPerBin[uMomBin][uIpBin]);
+                CorrFun[uMomBin][uIpBin] /= double(NumPairsUsed);
+                Stdev[uIpBin] /= double(NumPairsUsed);
                 Stdev[uIpBin] = sqrt(Stdev[uIpBin]);
-                CorrFunError[uMomBin][uIpBin] = Stdev[uIpBin]/sqrt(double(LoadedPairsPerBin[uMomBin][uIpBin]));
+                CorrFunError[uMomBin][uIpBin] = Stdev[uIpBin]/sqrt(double(NumPairsUsed));
             }
-            NumberOfPairs += LoadedPairsPerBin[uMomBin][uIpBin];
+            NumberOfPairs += NumPairsUsed;
             //in case of event mixing, the total correlation function is calculated based on the Weights
             if(EventMixing){
                 CorrFun[uMomBin][NumIpBins] += WeightIp[uIpBin]*CorrFun[uMomBin][uIpBin];
