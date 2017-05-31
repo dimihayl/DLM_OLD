@@ -606,7 +606,6 @@ double CATS::EvalCorrFun(const double& Momentum){
     double RelMom[3];
     RelMom[0] = WhichMomBin?GetMomentum(WhichMomBin-1):-1;
     RelMom[1] = GetMomentum(WhichMomBin);
-    //RelMom[2] = WhichMomBin!=(NumMomBins-1)?GetMomentum(WhichMomBin+1):-1;
     RelMom[2] = WhichMomBin<(NumMomBins-1)?GetMomentum(WhichMomBin+1):-1;
 
     double* InterpolRange;
@@ -1361,7 +1360,6 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
     //Read the header lines
     for(unsigned short us=0; us<NumBlankHeaderLines; us++){
         fgets(cdummy, 511, InFile);
-        //printf("Line %u: %s\n", us, cdummy);
     }
 
     if(feof(InFile)){
@@ -1588,8 +1586,6 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                         Booster.Boost(MomC);
                         Booster.Boost(MomC2);
 
-                        //dRadOld = sqrt(dRadVec[1]*dRadVec[1]+dRadVec[2]*dRadVec[2]+dRadVec[3]*dRadVec[3]);
-                        //Printf("dRadVec[1]=%f; dRadVec[0]=%f; MomC[1]/MomC[0]=%f", dRadVec[1], dRadVec[0], MomC[1]/MomC[0]);
                         dRadVec[1] += MomC[1]/MomC[0]*dRadVec[0];
                         dRadVec[2] += MomC[2]/MomC[0]*dRadVec[0];
                         dRadVec[3] += MomC[3]/MomC[0]*dRadVec[0];

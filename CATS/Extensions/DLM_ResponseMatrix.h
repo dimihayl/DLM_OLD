@@ -49,9 +49,6 @@ private:
 //converts the TH2F matrix to double** format
     void ConvertMatrix(const int& WhichMatr, TH2F* input, const bool& InvAxis);
 
-    //void MatrixMult(double** Mtrx1, double** Mtrx2, double** Result);
-    //void CopyMatrix(double** Target, double** Destination);
-    //void MakeUnitMatrix(double** Matrix);
     double BilinearInterpolation(const double& x0, const double& y0,
                                  const double& x1, const double& y1,
                                  const double& f00, const double& f01, const double& f10, const double& f11,

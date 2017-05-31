@@ -53,17 +53,7 @@ void DLM_SmearedCats::Correct(const bool& NewBinning){
     }
     double MomentumTrue;
     unsigned WhichMomBin;
-/*
-    if(CorrectedCk || (!CorrectedCk && NewBinning)){
-        delete [] CorrectedCk; CorrectedCk=NULL;
-        CorrectedCk = new double [cat[0]->GetNumMomBins()];
-    }
 
-    if(CorrectedCkErr || (!CorrectedCkErr && NewBinning)){
-        delete [] CorrectedCkErr; CorrectedCkErr=NULL;
-        CorrectedCkErr = new double [cat[0]->GetNumMomBins()];
-    }
-*/
     if(CorrectedCk && NewBinning){
         delete [] CorrectedCk; CorrectedCk=NULL;
     }
@@ -121,7 +111,6 @@ double DLM_SmearedCats::EvalCorrectedCk(const double& Momentum){
     double RelMom[3];
     RelMom[0] = WhichMomBin?cat[0]->GetMomentum(WhichMomBin-1):-1;
     RelMom[1] = cat[0]->GetMomentum(WhichMomBin);
-    //RelMom[2] = WhichMomBin!=(NumMomBins-1)?GetMomentum(WhichMomBin+1):-1;
     RelMom[2] = WhichMomBin<(NumMomBins-1)?cat[0]->GetMomentum(WhichMomBin+1):-1;
 
     double* InterpolRange;
@@ -161,7 +150,6 @@ double DLM_SmearedCats::EvalCorrectedCkErr(const double& Momentum){
     double RelMom[3];
     RelMom[0] = WhichMomBin?cat[0]->GetMomentum(WhichMomBin-1):-1;
     RelMom[1] = cat[0]->GetMomentum(WhichMomBin);
-    //RelMom[2] = WhichMomBin!=(NumMomBins-1)?GetMomentum(WhichMomBin+1):-1;
     RelMom[2] = WhichMomBin<(NumMomBins-1)?cat[0]->GetMomentum(WhichMomBin+1):-1;
 
     double* InterpolRange;

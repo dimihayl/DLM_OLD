@@ -4,14 +4,6 @@
 DLM_ResponseMatrix::DLM_ResponseMatrix(CATS& ab, TH2F* hs, TH2F* hr, const bool& ia):
     Kitty(ab),hSigmaMatrix(hs),hResidualMatrix(hr),InvertedAxis(ia),NumMomBins(Kitty.GetNumMomBins()){
 
-    //SigmaMatrix = NULL;
-    //SparseSigma = NULL;
-    //ResidualMatrix = NULL;
-    //SparseResidual = NULL;
-    //ResponseMatrix = NULL;
-    //SparseResponse = NULL;
-//Printf("C: SparseSigma=%p; SparseResidual=%p; SparseResponse=%p", SparseSigma, SparseResidual, SparseResponse);
-
     //in case we have a resolution matrix, we convert it to
     //the double** format and normalize it
     if(hSigmaMatrix){
@@ -80,16 +72,13 @@ DLM_ResponseMatrix::DLM_ResponseMatrix(CATS& ab, TH2F* hs, TH2F* hr, const bool&
 }
 
 DLM_ResponseMatrix::~DLM_ResponseMatrix(){
-//Printf("->DLM_ResponseMatrix::~DLM_ResponseMatrix()");
     if(hSigmaMatrix){
         DeleteMatrix(mSigma);
     }
-//Printf("  1");
     if(hResidualMatrix){
         DeleteMatrix(mResidual);
     }
     //if both are defined or both are not defined
-//Printf("   hSigmaMatrix=%p; hResidualMatrix=%p; ^=%i", hSigmaMatrix, hResidualMatrix, bool(hSigmaMatrix)^bool(hResidualMatrix));
     if( !(bool(hSigmaMatrix)^bool(hResidualMatrix)) ){
         DeleteMatrix(mResponse);
     }
@@ -105,7 +94,6 @@ void DLM_ResponseMatrix::AllocateMatrix(const int& WhichMatr){
     for(int iBin=0; iBin<NumMomBins; iBin++){
         Matrix[0][iBin] = new double [NumMomBins];
         Sparse[0][iBin] = new int [4];
-//Printf("AM: Sparse[0][%i][0]=%p", iBin, Sparse[0][iBin][0]);
     }
 }
 
@@ -114,14 +102,10 @@ void DLM_ResponseMatrix::DeleteMatrix(const int& WhichMatr){
     double** Matrix = GetMatrix(WhichMatr);
     int** Sparse = GetSparse(WhichMatr);
     for(int iBin=0; iBin<NumMomBins; iBin++){
-//Printf("deleting M %p", Matrix[iBin]);
         delete [] Matrix[iBin];
-//Printf("deleting S %p", Sparse[iBin]);
         delete [] Sparse[iBin];
     }
-//Printf("final delete M %p", Matrix);
     delete [] Matrix;
-//Printf("final delete S %p", Sparse);
     delete [] Sparse;
 }
 
@@ -186,110 +170,6 @@ void DLM_ResponseMatrix::MakeUnitMatrix(const int& WhichMatr){
         Sparse[iBinX][yAxisLast] = iBinX;
     }
 }
-
-void ConvertMatrixOld(const int& WhichMatr, TH2F* input, const bool& InvAxis){
-/*
-    int** Sparse = GetSparse(WhichMatr);
-//Printf("RM: Sparse=%p", Sparse);
-    double** Matrix = GetMatrix(WhichMatr);
-
-    double MomentumX;
-    double MomentumY;
-    double x0,y0,x1,y1,f00,f01,f10,f11;
-    int ix0,iy0,ix1,iy1;
-    int WhichHistoBinX;
-    int WhichHistoBinY;
-
-    //if the axis are inverted
-    TAxis* Xaxis = InvAxis?input->GetYaxis():input->GetXaxis();
-    TAxis* Yaxis = InvAxis?input->GetXaxis():input->GetYaxis();
-    for(int iBin=0; iBin<NumMomBins; iBin++){
-//Printf("&Sparse[%i][0]=%p", iBin, &Sparse[iBin][0]);
-        Sparse[iBin][xAxisFirst] = -1;
-        Sparse[iBin][xAxisLast] = -2;
-        Sparse[iBin][yAxisFirst] = -1;
-        Sparse[iBin][yAxisLast] = -2;
-    }
-
-    for(int iBinX=0; iBinX<NumMomBins; iBinX++){
-        MomentumX = Kitty.GetMomentum(iBinX);
-        WhichHistoBinX = Xaxis->FindBin(MomentumX);
-        if(WhichHistoBinX==1){
-            ix0 = 1;
-            ix1 = ix0+1;
-        }
-        else if(WhichHistoBinX==Xaxis->GetNbins()){
-            ix0 = Xaxis->GetNbins()-1;
-            ix1 = ix0+1;
-        }
-        else if(WhichHistoBinX<Xaxis->GetBinCenter(WhichHistoBinX)){
-            ix0 = WhichHistoBinX-1;
-            ix1 = ix0+1;
-        }
-        else{
-            ix0 = WhichHistoBinX;
-            ix1 = ix0+1;
-        }
-        x0 = Xaxis->GetBinCenter(ix0);
-        x1 = Xaxis->GetBinCenter(ix1);
-        for(int iBinY=0; iBinY<NumMomBins; iBinY++){
-            MomentumY = Kitty.GetMomentum(iBinY);
-
-            //get rid of negative entries, i.e. if we end up in a zero bin, directly set the value to zero
-            if(input->FindBin(InvAxis?MomentumY:MomentumX,InvAxis?MomentumX:MomentumY)==0){
-                Matrix[iBinY][iBinX] = 0;
-            }
-            else{
-                WhichHistoBinY = Yaxis->FindBin(MomentumY);
-                if(WhichHistoBinY==1){
-                    iy0 = 1;
-                    iy1 = iy0+1;
-                }
-                else if(WhichHistoBinY==Yaxis->GetNbins()){
-                    iy0 = Yaxis->GetNbins()-1;
-                    iy1 = iy0+1;
-                }
-                else if(WhichHistoBinY<Yaxis->GetBinCenter(WhichHistoBinY)){
-                    iy0 = WhichHistoBinY-1;
-                    iy1 = iy0+1;
-                }
-                else{
-                    iy0 = WhichHistoBinY;
-                    iy1 = iy0+1;
-                }
-                y0 = Yaxis->GetBinCenter(iy0);
-                y1 = Yaxis->GetBinCenter(iy1);
-                f00 = input->GetBinContent(ix0,iy0);
-                f10 = input->GetBinContent(ix1,iy0);
-                f01 = input->GetBinContent(ix0,iy1);
-                f11 = input->GetBinContent(ix1,iy1);
-
-                Matrix[iBinY][iBinX] = BilinearInterpolation(x0,y0,x1,y1,f00,f01,f10,f11,MomentumX,MomentumY);
-
-                //we don't want negative entries
-                if(Matrix[iBinY][iBinX]<0) Matrix[iBinY][iBinX] = 0;
-            }
-
-
-            if(Matrix[iBinY][iBinX]!=0 && Sparse[iBinY][xAxisFirst]==-1){
-                Sparse[iBinY][xAxisFirst] = iBinX;
-            }
-            if(Matrix[iBinY][iBinX]!=0 && Sparse[iBinX][yAxisFirst]==-1){
-                Sparse[iBinX][yAxisFirst] = iBinY;
-            }
-            if(Matrix[iBinY][iBinX]!=0){
-                Sparse[iBinY][xAxisLast] = iBinX;
-            }
-            if(Matrix[iBinY][iBinX]!=0){
-                Sparse[iBinX][yAxisLast] = iBinY;
-            }
-
-        }
-    }
-    NormalizeMatrix(WhichMatr);
-*/
-}
-
 
 void DLM_ResponseMatrix::ConvertMatrix(const int& WhichMatr, TH2F* input, const bool& InvAxis){
 
@@ -365,8 +245,6 @@ void DLM_ResponseMatrix::ConvertMatrix(const int& WhichMatr, TH2F* input, const 
                 }
             }
 
-//Printf("Matrix[%i][%i]=%e", iBinY, iBinX, Matrix[iBinY][iBinX]);
-
             if(Matrix[iBinY][iBinX]!=0 && Sparse[iBinY][xAxisFirst]==-1){
                 Sparse[iBinY][xAxisFirst] = iBinX;
             }
@@ -407,16 +285,12 @@ void DLM_ResponseMatrix::NormalizeMatrix(const int& WhichMatr){
 
     for(int iBinY=0; iBinY<NumMomBins; iBinY++){
         for(int iBinX=Sparse[iBinY][xAxisFirst]; iBinX<=Sparse[iBinY][xAxisLast]; iBinX++){
-        //for(int iBinX=0; iBinX<NumMomBins; iBinX++){
-            //Norm[iBinX] += Matrix[iBinY][iBinX];
             Norm[iBinY] += Matrix[iBinY][iBinX];
         }
     }
 
     for(int iBinY=0; iBinY<NumMomBins; iBinY++){
-//Printf("%i: %i <-> %i", iBinY, Sparse[iBinY][xAxisFirst], Sparse[iBinY][xAxisLast]);
         for(int iBinX=Sparse[iBinY][xAxisFirst]; iBinX<=Sparse[iBinY][xAxisLast]; iBinX++){
-        //for(int iBinX=0; iBinX<NumMomBins; iBinX++){
             if(Norm[iBinY]) Matrix[iBinY][iBinX] /= Norm[iBinY];
             else Matrix[iBinY][iBinX]=0;
         }
@@ -437,7 +311,6 @@ void RespMatrTest1(){
     for(int iBinX=1; iBinX<=NumBins; iBinX++){
         for(int iBinY=1; iBinY<=NumBins; iBinY++){
             hTest1->SetBinContent(iBinX, iBinY, 0);
-            //Printf("iX,iY=%i,%i => X,Y=%f,%f",iBinX,iBinY,hTest1->GetXaxis()->GetBinCenter(iBinX),hTest1->GetYaxis()->GetBinCenter(iBinY));
         }
     }
 
@@ -469,7 +342,6 @@ void RespMatrTest1(){
     hTest2->SetBinContent(3,3,0.95*Norm);
 
     DLM_ResponseMatrix dlmRespMatr(Afterburner, hTest1, hTest2, false);
-    //DLM_ResponseMatrix dlmRespMatr(Afterburner, hTest2, NULL, false);
 
     delete hTest1;
 

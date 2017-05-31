@@ -167,7 +167,6 @@ public:
     //input vars: [0] should always be the momentum (MeV), [1] the radius (fm) and [2] 'cosθ'
     double* AnaSourcePar;
     void SetAnaSource(double (*AS)(double*), double* Pars);
-    //void SetAnaSource(double (*AS)(const double&, const double&, const double&));
 
     //!------------------------------------------------
 
@@ -307,10 +306,6 @@ private:
     //!------------------------------------------------
 
     //!Any other variables or functions used at runtime internally by CATS
-    //the output in the terminal is updated dynamically. Some functions might dump certain output that is to be
-    //deleted or updated later on. This var keeps track of the number of lines that need to be deleted.
-//    int NumTempOutLines;
-//    FILE *LogFile;
 
     double CurrentRhoStep;
     //!------------------------------------------------
@@ -369,16 +364,9 @@ private:
 
     //computes the momentum bin corresponding to Momentum
     unsigned GetBin(const double& Value, const double* Range, const unsigned& NumBins);
-//    unsigned GetMomBin(const double& Momentum);
-//    unsigned GetIpBin(const double& bVal);
     //computes the radius bin corresponding to Radius (for a certain l and S)
     unsigned GetRadBin(const double& Radius, const unsigned& uMomBin,
                        const unsigned short& usPol, const unsigned short& usPW);
-
-    //unsigned RoundU(const double& val);
-
-    //void DeleteOutputVariables();
-    //void DeleteMomIpVariables();
 
     //delete all variables that depend only on the number of momentum bins, b-bins and MaxPairs
     void DelMomIpMp();
@@ -416,21 +404,10 @@ private:
     double** CorrFun;
     double** CorrFunError;
 
-    //double ScattLen;
-    //double EffRange;
 
     //!------------------------------------------------
 
     //!---TEST OUTPUT STUFF---
-    //double ComputedNorm;
-    //double ComputedShift;
-
-
-
-    //void LoadData(const unsigned short NumBlankHeaderLines=3);
-
-    //double GaussSource(const double& Radius, const double& Size);
-    //double DynCauchySource(const double& Radius, const double&Momentum, const double& Size0, const double& SizePerGeV);
 
     ///------------------------------------------------------------------------------------------
 
