@@ -1,1 +1,6 @@
 I have added the possibility to make a cut on the total momentum of the pairs. The cut can be applied after loading the data.
+
+27.06.2017, CATS 1.1
+-The potentials are now saved as an array of functions (ShortRangePotential). I have changed the "polarization" therminology with "channels". 
+-The user can now have multiple channels (e.g. related to the spin) and for each of them all partial-wave potentials need to be defined!
+-The potential itself should be defined as f(double* par)

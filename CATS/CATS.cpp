@@ -14,7 +14,7 @@ CATS::CATS():
     RedMass = 0;
     pdgID[0] = 0;
     pdgID[1] = 0;
-    NumPol = 0;
+    NumCh = 0;
     NumMomBins= 0;
     StartRad = 0.005*FmToNu;
     EpsilonProp = 5e-6;
@@ -47,7 +47,7 @@ CATS::CATS():
     NumPW = NULL;
     MomBin = NULL;
     IpBin = NULL;
-    SpinWeights = NULL;
+    ChannelWeight = NULL;
     SavedWaveFunBins = NULL;
     PhaseShift = NULL;
     WaveFunRad = NULL;
@@ -60,10 +60,7 @@ CATS::CATS():
     TotalPairMomentum = NULL;
     LoadedPairsPerBin = NULL;
 
-    ShortRangePotentialUI = NULL;
-    ShortRangePotentialUS = NULL;
-    ShortRangePotentialI = NULL;
-    ShortRangePotentialS = NULL;
+    ShortRangePotential = NULL;
 
     AnalyticSource = NULL;
 
@@ -81,8 +78,22 @@ CATS::~CATS(){
     if(NumPW) {delete[]NumPW; NumPW=NULL;}
     if(MomBin) {delete[]MomBin; MomBin=NULL;}
     if(IpBin) {delete[]IpBin; IpBin=NULL;}
-    if(SpinWeights) {delete[]SpinWeights; SpinWeights=NULL;}
-    if(InputFileName) {delete [] InputFileName; InputFileName=NULL;}
+    if(ChannelWeight) {delete[]ChannelWeight; ChannelWeight=NULL;}
+    if(InputFileName) {delete[]InputFileName; InputFileName=NULL;}
+
+    if(ShortRangePotential){
+        for(unsigned short usCh=0; usCh<NumCh; usCh++){
+            if(ShortRangePotential[usCh]){
+                delete[]ShortRangePotential[usCh];
+                ShortRangePotential[usCh] = NULL;
+
+                delete[]PotPar[usCh];
+                PotPar[usCh] = NULL;
+            }
+        }
+        delete[]ShortRangePotential; ShortRangePotential=NULL;
+        delete[]PotPar; PotPar=NULL;
+    }
 }
 
 void CATS::DelMomIpMp(){
@@ -110,20 +121,20 @@ void CATS::DelIp(){
     delete [] WeightIpError; WeightIpError=NULL;
 }
 
-void CATS::DelMomPolPw(){
+void CATS::DelMomChPw(){
     if(!SavedWaveFunBins) return;
     for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-        for(unsigned usPol=0; usPol<NumPol; usPol++){
-            for(unsigned usPW=0; usPW<NumPW[usPol]; usPW++){
-                if(WaveFunRad[uMomBin][usPol][usPW])
-                    delete [] WaveFunRad[uMomBin][usPol][usPW];
-                if(WaveFunctionU[uMomBin][usPol][usPW])
-                    delete [] WaveFunctionU[uMomBin][usPol][usPW];
+        for(unsigned short usCh=0; usCh<NumCh; usCh++){
+            for(unsigned short usPW=0; usPW<NumPW[usCh]; usPW++){
+                if(WaveFunRad[uMomBin][usCh][usPW])
+                    delete [] WaveFunRad[uMomBin][usCh][usPW];
+                if(WaveFunctionU[uMomBin][usCh][usPW])
+                    delete [] WaveFunctionU[uMomBin][usCh][usPW];
             }
-            delete [] SavedWaveFunBins[uMomBin][usPol];
-            delete [] PhaseShift[uMomBin][usPol];
-            delete [] WaveFunRad[uMomBin][usPol];
-            delete [] WaveFunctionU[uMomBin][usPol];
+            delete [] SavedWaveFunBins[uMomBin][usCh];
+            delete [] PhaseShift[uMomBin][usCh];
+            delete [] WaveFunRad[uMomBin][usCh];
+            delete [] WaveFunctionU[uMomBin][usCh];
         }
         delete [] SavedWaveFunBins[uMomBin];
         delete [] PhaseShift[uMomBin];
@@ -161,7 +172,7 @@ void CATS::DelMomIp(){
 
 void CATS::DelAllMom(){
     DelMomIpMp();
-    DelMomPolPw();
+    DelMomChPw();
     DelMom();
     DelMomIp();
 }
@@ -202,54 +213,80 @@ void CATS::GetPdgId(int& id1, int& id2){
     id2 = pdgID[1];
 }
 
-//If the number of polarizations is changed, all previous input about the
-//polarization themselves is lost (i.e. NumPW and WhichPartialWave are reset!)
-void CATS::SetNumPol(const unsigned short& numPol){
-    if(NumPol == numPol) return;
-    if(!numPol){
-        printf("WARNING: Bad input in CATS::SetNumPol(unsigned short numPol)\n");
-        printf("         NumPol cannot be zero!\n");
+//If the number of channels is changed, all previous input about the
+//channels themselves is lost (i.e. NumPW, WhichPartialWave and the potentials are reset!)
+void CATS::SetNumChannels(const unsigned short& numCh){
+    if(NumCh == numCh) return;
+    if(!numCh){
+        printf("WARNING: Bad input in CATS::SetNumChannels(unsigned short numCh)\n");
+        printf("         NumCh cannot be zero!\n");
         return;
     }
 
     if(NumPW) {delete[]NumPW; NumPW=NULL;}
-    NumPW = new unsigned short [numPol];
+    NumPW = new unsigned short [numCh];
 
-    if(SpinWeights) {delete[]SpinWeights; SpinWeights=NULL;}
-    SpinWeights = new double [numPol];
-    SpinWeights[0] = 1;
-    for(unsigned short usPol=1; usPol<numPol; usPol++){
-        NumPW[usPol] = 0;
-        SpinWeights[usPol] = 0;
+    if(ShortRangePotential){
+        for(unsigned short usCh=0; usCh<numCh; usCh++){
+            if(ShortRangePotential[usCh]){
+                delete [] ShortRangePotential[usCh];
+                delete [] PotPar[usCh];
+            }
+        }
+        delete[]ShortRangePotential; ShortRangePotential=NULL;
+        delete[]PotPar; PotPar=NULL;
+    }
+    ShortRangePotential = new CatsPotential* [numCh];
+    PotPar = new double** [numCh];
+    for(unsigned short usCh=0; usCh<numCh; usCh++){
+        ShortRangePotential[usCh] = NULL;
+        PotPar[usCh] = NULL;
     }
 
-    DelMomPolPw();
-    NumPol = numPol;
+    if(ChannelWeight) {delete[]ChannelWeight; ChannelWeight=NULL;}
+    ChannelWeight = new double [numCh];
+    for(unsigned short usCh=0; usCh<numCh; usCh++){
+        NumPW[usCh] = 0;
+        ChannelWeight[usCh] = 0;
+    }
+
+    DelMomChPw();
+    NumCh = numCh;
 
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 }
-unsigned short CATS::GetNumPol(){
-    return NumPol;
+unsigned short CATS::GetNumChannels(){
+    return NumCh;
 }
 
-void CATS::SetNumPW(const unsigned short& usPol, const unsigned short& numPW){
-    if(usPol>=NumPol){
-        printf("WARNING: Bad input in CATS::SetNumPW(unsigned short usPol, unsigned short numPW)\n");
+void CATS::SetNumPW(const unsigned short& usCh, const unsigned short& numPW){
+    if(usCh>=NumCh){
+        printf("WARNING: Bad input in CATS::SetNumPW(unsigned short usCh, unsigned short numPW)\n");
         return;
     }
-    if(NumPW[usPol]==numPW) return;
-    DelMomPolPw();
-    NumPW[usPol] = numPW;
+    if(NumPW[usCh]==numPW) return;
+    DelMomChPw();
+    NumPW[usCh] = numPW;
+
+    if(ShortRangePotential[usCh]) delete[]ShortRangePotential[usCh];
+    ShortRangePotential[usCh] = new CatsPotential [numPW];
+    for(unsigned short usPW=0; usPW<numPW; usPW++){
+        ShortRangePotential[usCh][usPW] = 0;
+    }
+
+    if(PotPar[usCh]) delete[]PotPar[usCh];
+    PotPar[usCh] = new double* [numPW];
+
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 }
-unsigned short CATS::GetNumPW(const unsigned short& usPol){
-    if(usPol>=NumPol){
-        printf("WARNING: Bad input in CATS::GetNumPW(unsigned short usPol)\n");
+unsigned short CATS::GetNumPW(const unsigned short& usCh){
+    if(usCh>=NumCh){
+        printf("WARNING: Bad input in CATS::GetNumPW(unsigned short usCh)\n");
         return 0;
     }
-    return NumPW[usPol];
+    return NumPW[usCh];
 }
 
 void CATS::SetQ1Q2(const int& q1q2){
@@ -383,22 +420,22 @@ void CATS::SetIpBins(const unsigned& numBbins, const double& MinImpPar, const do
     }
 }
 
-void CATS::SetSpinWeight(const unsigned short& usPol, const double& weight){
-    if(usPol>=NumPol){
-        printf("WARNING: Bad input in CATS::SetSpinWeight(const unsigned short& usPol, const double& weight)\n");
+void CATS::SetChannelWeight(const unsigned short& usCh, const double& weight){
+    if(usCh>=NumCh){
+        printf("WARNING: Bad input in CATS::SetSpinWeight(const unsigned short& usCh, const double& weight)\n");
         return;
     }
-    if(SpinWeights[usPol]==weight) return;
-    SpinWeights[usPol] = weight;
+    if(ChannelWeight[usCh]==weight) return;
+    ChannelWeight[usCh] = weight;
     ComputedCorrFunction = false;
 }
 
-double CATS::GetSpinWeight(const unsigned short& usPol){
-    if(usPol>=NumPol){
-        printf("WARNING: Bad input in CATS::GetSpinWeight(const unsigned short& usPol)\n");
+double CATS::GetChannelWeight(const unsigned short& usCh){
+    if(usCh>=NumCh){
+        printf("WARNING: Bad input in CATS::GetSpinWeight(const unsigned short& usCh)\n");
         return 0;
     }
-    return SpinWeights[usPol];
+    return ChannelWeight[usCh];
 }
 
 void CATS::SetStartRad(const double& srad){
@@ -748,13 +785,13 @@ double CATS::GetCorrFunIp(const unsigned& WhichMomBin, const unsigned& WhichIpBi
     return GetCorrFunIp(WhichMomBin, WhichIpBin);
 }
 
-double CATS::GetPhaseShift(const unsigned& WhichMomBin, const short& Pol, const short& Pw){
-    if(NumMomBins<=WhichMomBin || NumPol<=Pol || NumPW[Pol]<=Pw) return 0;
-    return PhaseShift[WhichMomBin][Pol][Pw];
+double CATS::GetPhaseShift(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW){
+    if(NumMomBins<=WhichMomBin || NumCh<=usCh || NumPW[usCh]<=usPW) return 0;
+    return PhaseShift[WhichMomBin][usCh][usPW];
 }
 
-double CATS::EvalPhaseShift(const double& Momentum, const short& Pol, const short& Pw){
-    if(Momentum<MomBin[0] || Momentum>MomBin[NumMomBins] || NumPol<=Pol || NumPW[Pol]<=Pw) return 0;
+double CATS::EvalPhaseShift(const double& Momentum, const unsigned short& usCh, const unsigned short& usPW){
+    if(Momentum<MomBin[0] || Momentum>MomBin[NumMomBins] || NumCh<=usCh || NumPW[usCh]<=usPW) return 0;
     unsigned WhichMomBin = GetMomBin(Momentum);
     double RelMom[3];
     RelMom[0] = WhichMomBin?GetMomentum(WhichMomBin-1):-1;
@@ -781,11 +818,11 @@ double CATS::EvalPhaseShift(const double& Momentum, const short& Pol, const shor
         PhaseShiftRange = &PhaseShift[WhichMomBin];
     }
     else{//RelMom[1]==Momentum
-        return PhaseShift[WhichMomBin][Pol][Pw];
+        return PhaseShift[WhichMomBin][usCh][usPW];
     }
 
-    return (PhaseShiftRange[1][Pol][Pw]*(Momentum-InterpolRange[0])-
-            PhaseShiftRange[0][Pol][Pw]*(Momentum-InterpolRange[1]))/
+    return (PhaseShiftRange[1][usCh][usPW]*(Momentum-InterpolRange[0])-
+            PhaseShiftRange[0][usCh][usPW]*(Momentum-InterpolRange[1]))/
             (InterpolRange[1]-InterpolRange[0]);
 }
 
@@ -813,54 +850,54 @@ const double& CATS::NuFm(){
 }
 
 void CATS::RemoveShortRangePotential(){
-    if(!ShortRangePotentialUI && !ShortRangePotentialUS && !ShortRangePotentialI && !ShortRangePotentialS) return;
-    ShortRangePotentialUI = NULL;
-    ShortRangePotentialUS = NULL;
-    ShortRangePotentialI = NULL;
-    ShortRangePotentialS = NULL;
-    PotPar = NULL;
+    if(!ShortRangePotential) return;
+    for(unsigned short usCh=0; usCh<NumCh; usCh++){
+        for(unsigned short usPW=0; usPW<NumPW[usCh]; usPW++){
+            ShortRangePotential[usCh][usPW] = 0;
+            PotPar[usCh][usPW] = 0;
+        }
+    }
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 }
-void CATS::SetShortRangePotential(double (*pot)(const unsigned&, double*), double* Pars){
-    if(ShortRangePotentialUI==pot) return;
-    ShortRangePotentialUI = pot;
-    ShortRangePotentialUS = NULL;
-    ShortRangePotentialI = NULL;
-    ShortRangePotentialS = NULL;
-    PotPar = Pars;
+
+void CATS::RemoveShortRangePotential(const unsigned& usCh, const unsigned& usPW){
+    if(usCh>=NumCh){
+        printf("WARNING: Bad input in CATS::RemoveShortRangePotential(...)\n");
+        return;
+    }
+    if(usPW>=NumPW[usCh]){
+        printf("WARNING: Bad input in CATS::RemoveShortRangePotential(...)\n");
+        return;
+    }
+    if(!ShortRangePotential) return;
+    if(!ShortRangePotential[usCh]) return;
+    ShortRangePotential[usCh][usPW] = 0;
+    PotPar[usCh][usPW] = 0;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 }
-void CATS::SetShortRangePotential(double (*pot)(const unsigned short&, double*), double* Pars){
-    if(ShortRangePotentialUS==pot) return;
-    ShortRangePotentialUI = NULL;
-    ShortRangePotentialUS = pot;
-    ShortRangePotentialI = NULL;
-    ShortRangePotentialS = NULL;
-    PotPar = Pars;
+
+void CATS::SetShortRangePotential(const unsigned& usCh, const unsigned& usPW,
+                           double (*pot)(double* Pars), double* Pars){
+    if(usCh>=NumCh){
+        printf("WARNING: Bad input in CATS::SetShortRangePotential(...)\n");
+        return;
+    }
+    if(usPW>=NumPW[usCh]){
+        printf("WARNING: Bad input in CATS::SetShortRangePotential(...)\n");
+        return;
+    }
+    if(ShortRangePotential[usCh][usPW]==pot && PotPar[usCh][usPW]==Pars){
+        return;
+    }
+
+    ShortRangePotential[usCh][usPW] = pot;
+    PotPar[usCh][usPW] = Pars;
+
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
-}
-void CATS::SetShortRangePotential(double (*pot)(const int&, double*), double* Pars){
-    if(ShortRangePotentialI==pot) return;
-    ShortRangePotentialUI = NULL;
-    ShortRangePotentialUS = NULL;
-    ShortRangePotentialI = pot;
-    ShortRangePotentialS = NULL;
-    PotPar = Pars;
-    ComputedWaveFunction = false;
-    ComputedCorrFunction = false;
-}
-void CATS::SetShortRangePotential(double (*pot)(const short&, double*), double* Pars){
-    if(ShortRangePotentialS==pot) return;
-    ShortRangePotentialUI = NULL;
-    ShortRangePotentialUS = NULL;
-    ShortRangePotentialI = NULL;
-    ShortRangePotentialS = pot;
-    PotPar = Pars;
-    ComputedWaveFunction = false;
-    ComputedCorrFunction = false;
+
 }
 
 void CATS::RemoveAnaSource(){
@@ -900,7 +937,7 @@ void CATS::KillTheCat(const int& Options){
         printf("\033[1;31mERROR!\033[0m The impact parameter bins are not set!\n\n");
         return;
     }
-    if(!NumPol){
+    if(!NumCh){
         printf("\033[1;31mERROR!\033[0m There is not a single spin-state set!\n\n");
         return;
     }
@@ -971,20 +1008,20 @@ void CATS::ComputeWaveFunction(){
         WaveFunRad = new double*** [NumMomBins];
         WaveFunctionU = new double*** [NumMomBins];
         for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-            SavedWaveFunBins[uMomBin] = new unsigned* [NumPol];
-            PhaseShift[uMomBin] = new double* [NumPol];
-            WaveFunRad[uMomBin] = new double** [NumPol];
-            WaveFunctionU[uMomBin] = new double** [NumPol];
-            for(unsigned short usPol=0; usPol<NumPol; usPol++){
-                SavedWaveFunBins[uMomBin][usPol] = new unsigned [NumPW[usPol]];
-                PhaseShift[uMomBin][usPol] = new double [NumPW[usPol]];
-                WaveFunRad[uMomBin][usPol] = new double* [NumPW[usPol]];
-                WaveFunctionU[uMomBin][usPol] = new double* [NumPW[usPol]];
-                for(unsigned short usPW=0; usPW<NumPW[usPol]; usPW++){
-                    SavedWaveFunBins[uMomBin][usPol][usPW] = 0;
-                    PhaseShift[uMomBin][usPol][usPW] = 0;
-                    WaveFunRad[uMomBin][usPol][usPW] = NULL;
-                    WaveFunctionU[uMomBin][usPol][usPW] = NULL;
+            SavedWaveFunBins[uMomBin] = new unsigned* [NumCh];
+            PhaseShift[uMomBin] = new double* [NumCh];
+            WaveFunRad[uMomBin] = new double** [NumCh];
+            WaveFunctionU[uMomBin] = new double** [NumCh];
+            for(unsigned short usCh=0; usCh<NumCh; usCh++){
+                SavedWaveFunBins[uMomBin][usCh] = new unsigned [NumPW[usCh]];
+                PhaseShift[uMomBin][usCh] = new double [NumPW[usCh]];
+                WaveFunRad[uMomBin][usCh] = new double* [NumPW[usCh]];
+                WaveFunctionU[uMomBin][usCh] = new double* [NumPW[usCh]];
+                for(unsigned short usPW=0; usPW<NumPW[usCh]; usPW++){
+                    SavedWaveFunBins[uMomBin][usCh][usPW] = 0;
+                    PhaseShift[uMomBin][usCh][usPW] = 0;
+                    WaveFunRad[uMomBin][usCh][usPW] = NULL;
+                    WaveFunctionU[uMomBin][usCh][usPW] = NULL;
                 }
             }
         }
@@ -1000,35 +1037,37 @@ void CATS::ComputeWaveFunction(){
     //here one finds the max num PWs, this is needed later on for
     //the correct mapping of all variables
     unsigned short MaxNumPW=0;
-    for(unsigned short usPol=0; usPol<NumPol; usPol++){
-        if(NumPW[usPol]>MaxNumPW){
-            MaxNumPW = NumPW[usPol];
+    for(unsigned short usCh=0; usCh<NumCh; usCh++){
+        if(NumPW[usCh]>MaxNumPW){
+            MaxNumPW = NumPW[usCh];
         }
     }
-    unsigned TotalNumberOfBins = NumMomBins*NumPol*MaxNumPW;
+    unsigned TotalNumberOfBins = NumMomBins*NumCh*MaxNumPW;
 
 
     unsigned uMomBin;
-    unsigned usPol;
-    unsigned usPW;
+    unsigned short usCh;
+    unsigned short usPW;
 
     for(unsigned uMPP=0; uMPP<TotalNumberOfBins; uMPP++){
         //compute to which MomBin, Polarization and PW corresponds this MPP,
-        //i.e. map uMomBin, usPol and usPW to uMPP
-        uMomBin = uMPP/(NumPol*MaxNumPW);
-        usPol = (uMPP%(NumPol*MaxNumPW))/(MaxNumPW);
-        usPW = (uMPP%(NumPol*MaxNumPW))%(MaxNumPW);
+        //i.e. map uMomBin, usCh and usPW to uMPP
+        uMomBin = uMPP/(NumCh*MaxNumPW);
+        usCh = (uMPP%(NumCh*MaxNumPW))/(MaxNumPW);
+        usPW = (uMPP%(NumCh*MaxNumPW))%(MaxNumPW);
         //since uMPP is build under the assumption all NumPW are the same
         //one has to check if usPW has a meaningful value!
-        if(usPW>=NumPW[usPol]) continue;
+        if(usPW>=NumPW[usCh]) continue;
+        //if the potential for this channel and PW is zero => continue
+        if(!ShortRangePotential[usCh][usPW]) continue;
         //skip momentum bins which have obtained an error code
         if(!MomBinConverged[uMomBin] && ExcludeFailedConvergence) continue;
 
-        SavedWaveFunBins[uMomBin][usPol][usPW]=0;
+        SavedWaveFunBins[uMomBin][usCh][usPW]=0;
 
         //if s+l is odd, than this partial wave will cancel out during the
         //symmetrization for identical particles
-        if( IdenticalParticles && (usPW+usPol)%2 ) continue;
+        if( IdenticalParticles && (usPW+usCh)%2 ) continue;
 
         double Momentum;
         //the momentum is taken from the center of the bin
@@ -1058,7 +1097,7 @@ void CATS::ComputeWaveFunction(){
         double MaxDeltaRad;
         double MinDeltaRad;
 
-        PropagatingFunction(PropFunWithoutSI[0], PropFunVal[0], StartRad, Momentum, usPW, usPol);
+        PropagatingFunction(PropFunWithoutSI[0], PropFunVal[0], StartRad, Momentum, usPW, usCh);
         MinDeltaRad = sqrt(fabs(EpsilonProp/PropFunVal[0]));
         MaxDeltaRad = sqrt(EpsilonProp/(Momentum*Momentum));
 
@@ -1079,13 +1118,13 @@ void CATS::ComputeWaveFunction(){
         Rho[kOld] = Momentum*PosRad[kOld];
         DeltaRad[kOld] = MinDeltaRad;
         DeltaRad2[kOld] = DeltaRad[kOld]*DeltaRad[kOld];
-        PropagatingFunction(PropFunWithoutSI[kOld], PropFunVal[kOld], PosRad[kOld], Momentum, usPW, usPol);
+        PropagatingFunction(PropFunWithoutSI[kOld], PropFunVal[kOld], PosRad[kOld], Momentum, usPW, usCh);
 
         PosRad[kCurrent] = PosRad[kOld]+DeltaRad[kOld];
         Rho[kCurrent] = Momentum*PosRad[kCurrent];
         DeltaRad[kCurrent] = MinDeltaRad;
         DeltaRad2[kCurrent] = DeltaRad[kCurrent]*DeltaRad[kCurrent];
-        PropagatingFunction(PropFunWithoutSI[kCurrent], PropFunVal[kCurrent], PosRad[kCurrent], Momentum, usPW, usPol);
+        PropagatingFunction(PropFunWithoutSI[kCurrent], PropFunVal[kCurrent], PosRad[kCurrent], Momentum, usPW, usCh);
 
         //the initial values for the wave function are set based on the solution without the strong potential.
         //this will of course lead to a wrong normalization in the asymptotic region, but this will be corrected for later on,
@@ -1172,7 +1211,7 @@ void CATS::ComputeWaveFunction(){
 
             BufferWaveFunction[NumComputedPoints] = WaveFun[kNew];
 
-            PropagatingFunction(PropFunWithoutSI[kNew], PropFunVal[kNew], PosRad[kNew], Momentum, usPW, usPol);
+            PropagatingFunction(PropFunWithoutSI[kNew], PropFunVal[kNew], PosRad[kNew], Momentum, usPW, usCh);
 
             DeltaRad2[kNew] = fabs(EpsilonProp/PropFunVal[kNew]);
             DeltaRad[kNew] = sqrt(DeltaRad2[kNew]);
@@ -1328,7 +1367,7 @@ void CATS::ComputeWaveFunction(){
             double ShiftRho = ShiftRad*Momentum;
             double Norm = ReferencePartialWave(MaxConvRad+ShiftRad, Momentum, usPW)/MaxConvergedNumWF;
 
-            PhaseShift[uMomBin][usPol][usPW] = ShiftRho;
+            PhaseShift[uMomBin][usCh][usPW] = ShiftRho;
 
             //we save all entries up to the point in which the normalization was performed. For higher values
             //we will later on use the asymptotic form. N.B. in principle one could save a bit of space and
@@ -1336,17 +1375,17 @@ void CATS::ComputeWaveFunction(){
             //was not "perfect" there might be some inaccuracy in the interval up to the normalization point.
             //btw. the step size is set to be the MaxDeltaRad
 
-            SavedWaveFunBins[uMomBin][usPol][usPW] = StepOfMaxConvergedNumWF+1;
+            SavedWaveFunBins[uMomBin][usCh][usPW] = StepOfMaxConvergedNumWF+1;
 
-            if(WaveFunRad[uMomBin][usPol][usPW]) delete [] WaveFunRad[uMomBin][usPol][usPW];
-            WaveFunRad[uMomBin][usPol][usPW] = new double [SavedWaveFunBins[uMomBin][usPol][usPW]];
+            if(WaveFunRad[uMomBin][usCh][usPW]) delete [] WaveFunRad[uMomBin][usCh][usPW];
+            WaveFunRad[uMomBin][usCh][usPW] = new double [SavedWaveFunBins[uMomBin][usCh][usPW]];
 
-            if(WaveFunctionU[uMomBin][usPol][usPW]) delete [] WaveFunctionU[uMomBin][usPol][usPW];
-            WaveFunctionU[uMomBin][usPol][usPW] = new double [SavedWaveFunBins[uMomBin][usPol][usPW]];
+            if(WaveFunctionU[uMomBin][usCh][usPW]) delete [] WaveFunctionU[uMomBin][usCh][usPW];
+            WaveFunctionU[uMomBin][usCh][usPW] = new double [SavedWaveFunBins[uMomBin][usCh][usPW]];
 
-            for(unsigned uPoint=0; uPoint<SavedWaveFunBins[uMomBin][usPol][usPW]; uPoint++){
-                WaveFunRad[uMomBin][usPol][usPW][uPoint] = BufferRad[uPoint];
-                WaveFunctionU[uMomBin][usPol][usPW][uPoint] = Norm*BufferWaveFunction[uPoint];
+            for(unsigned uPoint=0; uPoint<SavedWaveFunBins[uMomBin][usCh][usPW]; uPoint++){
+                WaveFunRad[uMomBin][usCh][usPW][uPoint] = BufferRad[uPoint];
+                WaveFunctionU[uMomBin][usCh][usPW][uPoint] = Norm*BufferWaveFunction[uPoint];
             }
 
         }//if(MomBinConverged[uMomBin] || !ExcludeFailedConvergence)
@@ -1978,31 +2017,21 @@ void CATS::FoldDataSourceAndWF(){
     ComputedCorrFunction = true;
 }
 
-//this function selects the non-NULL function from the above three and uses
-//this as the potential. Return 0 in case no potential is defined.
-//!THE INPUT FOR THE POTENTIAL IS ASSUMED TO BE IN [fm]
-//!THE OUTPUT IS ASSUMED TO BE IN [MeV]
-double CATS::ShortRangePotential(const unsigned short& Polarization){
-    if(ShortRangePotentialUI) return ShortRangePotentialUI(Polarization, PotPar);
-    else if(ShortRangePotentialUS) return ShortRangePotentialUS(Polarization, PotPar);
-    else if(ShortRangePotentialI) return ShortRangePotentialI(Polarization, PotPar);
-    else if(ShortRangePotentialS) return ShortRangePotentialS(Polarization, PotPar);
-    else return 0;
-}
-
 double CATS::CoulombPotential(const double& Radius){
     return Q1Q2*AlphaFS/(fabs(Radius)+1e-64);
 }
 //the differential equation for the Schroedinger equation
 void CATS::PropagatingFunction(double& Basic, double& Full,
                                  const double& Radius, const double& Momentum,
-                                 const unsigned short& AzQN, const unsigned short& Pol){
+                                 const unsigned short& usPW, const unsigned short& usCh){
     //make sure that there is no division by zero by adding 1e-64
     //the Basic result is the Prop.Fun. WITHOUT a short range potential
-    Basic = 2*RedMass*CoulombPotential(Radius) + double(AzQN)*(double(AzQN)+1)/(Radius*Radius+1e-64) - Momentum*Momentum;
+    Basic = 2*RedMass*CoulombPotential(Radius) + double(usPW)*(double(usPW)+1)/(Radius*Radius+1e-64) - Momentum*Momentum;
     //the Full result is the Prop.Fun. WITH a short range potential
-    PotPar[0] = Radius*NuToFm; PotPar[1] = Momentum;
-    Full = Basic + 2*RedMass*ShortRangePotential(Pol);
+    PotPar[usCh][usPW][0] = Radius*NuToFm; PotPar[usCh][usPW][1] = Momentum;
+    //! In principle this should be executed only if ShortRangePotential[usCh][usPW] is defined.
+    //! Do note that this function is NEVER called in case this is not true! Make sure that this stays so!
+    Full = Basic + 2*RedMass*ShortRangePotential[usCh][usPW](PotPar[usCh][usPW]);
 }
 
 double CATS::PlanePartialWave(const double& Radius, const double& Momentum, const unsigned short& usPW){
@@ -2080,18 +2109,18 @@ double CATS::NewtonRapson(double (CATS::*Function)(const double&, const double&,
 }
 
 double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
-                                const unsigned short& usPol, const unsigned short& usPW, const bool& DivideByR){
+                                const unsigned short& usCh, const unsigned short& usPW, const bool& DivideByR){
     unsigned uMomBin = GetMomBin(Momentum);
     if(uMomBin>=NumMomBins){
         printf("ERROR: There is a bug inside EvalWaveFunctionU! Contact the developer!");
         return 0;
     }
-    double* WFU = WaveFunctionU[uMomBin][usPol][usPW];
-    double* WFR = WaveFunRad[uMomBin][usPol][usPW];
-    unsigned& SWFB = SavedWaveFunBins[uMomBin][usPol][usPW];
+    double* WFU = WaveFunctionU[uMomBin][usCh][usPW];
+    double* WFR = WaveFunRad[uMomBin][usCh][usPW];
+    unsigned& SWFB = SavedWaveFunBins[uMomBin][usCh][usPW];
     //double& MaxSavedRad = WFR[SWFB-1];
 
-    unsigned RadBin = GetRadBin(Radius, uMomBin, usPol, usPW);
+    unsigned RadBin = GetRadBin(Radius, uMomBin, usCh, usPW);
     double MultFactor = DivideByR?1./Radius:1;
 
     //make a linear extrapolation
@@ -2099,26 +2128,29 @@ double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
         return WFU[RadBin]*MultFactor+(WFU[RadBin+1]*MultFactor-WFU[RadBin]*MultFactor)*(Radius-WFR[RadBin])/(WFR[RadBin+1]-WFR[RadBin]);
     }
     else{
-        return ReferencePartialWave(Radius+PhaseShift[uMomBin][usPol][usPW]/Momentum, Momentum, usPW);
+        return ReferencePartialWave(Radius+PhaseShift[uMomBin][usCh][usPW]/Momentum, Momentum, usPW);
     }
 }
 
-double CATS::EffectiveFunction(const double& Radius, const double& Momentum, const unsigned short& usPol){
+double CATS::EffectiveFunction(const double& Radius, const double& Momentum, const unsigned short& usCh){
     double Result;
     double TotalResult=0;
 
-    for(unsigned short usPW=0; usPW<NumPW[usPol]; usPW++){
-        if( IdenticalParticles && (usPW+usPol)%2 ) continue;
-        Result = EvalWaveFunctionU(Radius, Momentum, usPol, usPW, true);
-        TotalResult += double(2*usPW+1)*Result*Result;
-    }
-
-    for(unsigned short usPW=NumPW[usPol]; usPW<1000; usPW++){
-        if( IdenticalParticles && (usPW+usPol)%2 ) continue;
-        Result = ReferencePartialWave(Radius, Momentum, usPW)/Radius;
-        Result = double(2*usPW+1)*Result*Result;
-        TotalResult += Result;
-        if(fabs(Result)<1e-7 && fabs(Result)<1e-8) break;
+    for(unsigned short usPW=0; usPW<1000; usPW++){
+        //wave function symmetrization
+        if( IdenticalParticles && (usPW+usCh)%2 ) continue;
+        //numerical solution, no computation result for zero potential
+        if(usPW<NumPW[usCh] && ShortRangePotential[usCh][usPW]){
+            Result = EvalWaveFunctionU(Radius, Momentum, usCh, usPW, true);
+            TotalResult += double(2*usPW+1)*Result*Result;
+        }
+        else{
+            Result = ReferencePartialWave(Radius, Momentum, usPW)/Radius;
+            Result = double(2*usPW+1)*Result*Result;
+            TotalResult += Result;
+            //convergence criteria
+            if(usPW>=NumPW[usCh] && fabs(Result)<1e-7 && fabs(Result)<1e-8) break;
+        }
     }
 
     return TotalResult*(1+IdenticalParticles);
@@ -2126,27 +2158,30 @@ double CATS::EffectiveFunction(const double& Radius, const double& Momentum, con
 
 double CATS::EffectiveFunction(const double& Radius, const double& Momentum){
     double TotWF=0;
-    for(unsigned short usPol=0; usPol<NumPol; usPol++){
-        TotWF += EffectiveFunction(Radius, Momentum, usPol)*SpinWeights[usPol];
+    for(unsigned short usCh=0; usCh<NumCh; usCh++){
+        TotWF += EffectiveFunction(Radius, Momentum, usCh)*ChannelWeight[usCh];
     }
     return TotWF;
 }
 
-double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usPol){
+double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usCh){
     double Result;
     double TotalResult=0;
 
-    for(unsigned short usPW=0; usPW<NumPW[usPol]; usPW++){
-        if( IdenticalParticles && (usPW+usPol)%2 ) continue;
-        Result = double(2*usPW+1)*EvalWaveFunctionU(Radius, Momentum, usPol, usPW, true)*gsl_sf_legendre_Pl(usPW,CosTheta);
-        TotalResult += Result*Result;
-    }
-    for(unsigned short usPW=NumPW[usPol]; usPW<1000; usPW++){
-        if( IdenticalParticles && (usPW+usPol)%2 ) continue;
-        Result = double(2*usPW+1)*ReferencePartialWave(Radius, Momentum, usPW)/Radius*gsl_sf_legendre_Pl(usPW,CosTheta);
-        Result = Result*Result;
-        TotalResult += Result;
-        if(fabs(Result)<1e-7 && fabs(Result)<1e-8) break;
+    for(unsigned short usPW=0; usPW<1000; usPW++){
+        //wave function symmetrization
+        if( IdenticalParticles && (usPW+usCh)%2 ) continue;
+        //numerical solution, no computation result for zero potential
+        if(usPW<NumPW[usCh] && ShortRangePotential[usCh][usPW]){
+            Result = double(2*usPW+1)*EvalWaveFunctionU(Radius, Momentum, usCh, usPW, true)*gsl_sf_legendre_Pl(usPW,CosTheta);
+            TotalResult += Result*Result;
+        }
+        else{
+            Result = double(2*usPW+1)*ReferencePartialWave(Radius, Momentum, usPW)/Radius*gsl_sf_legendre_Pl(usPW,CosTheta);
+            Result = Result*Result;
+            TotalResult += Result;
+            if(usPW>=NumPW[usCh] && fabs(Result)<1e-7 && fabs(Result)<1e-8) break;
+        }
     }
 
     return TotalResult*(1+IdenticalParticles);
@@ -2154,8 +2189,8 @@ double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum
 
 double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta){
     double TotWF=0;
-    for(unsigned short usPol=0; usPol<NumPol; usPol++){
-        TotWF += EffectiveFunctionTheta(Radius, Momentum, CosTheta, usPol)*SpinWeights[usPol];
+    for(unsigned short usCh=0; usCh<NumCh; usCh++){
+        TotWF += EffectiveFunctionTheta(Radius, Momentum, CosTheta, usCh)*ChannelWeight[usCh];
     }
     return TotWF;
 }
@@ -2193,8 +2228,8 @@ unsigned CATS::GetIpBin(const double& bVal){
     return GetBin(bVal, IpBin, NumIpBins+1);
 }
 unsigned CATS::GetRadBin(const double& Radius, const unsigned& uMomBin,
-                         const unsigned short& usPol, const unsigned short& usPW){
-    return GetBin(Radius, WaveFunRad[uMomBin][usPol][usPW], SavedWaveFunBins[uMomBin][usPol][usPW]);
+                         const unsigned short& usCh, const unsigned short& usPW){
+    return GetBin(Radius, WaveFunRad[uMomBin][usCh][usPW], SavedWaveFunBins[uMomBin][usCh][usPW]);
 }
 
 

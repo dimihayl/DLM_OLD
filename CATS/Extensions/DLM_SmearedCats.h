@@ -25,7 +25,7 @@ public:
 
     void Correct(const bool& NewBinning);
 private:
-    const unsigned NumCk;
+
     double* LambdaCoeff;
     double* CorrectedCk;
     double* CorrectedCkErr;
@@ -33,7 +33,7 @@ private:
     TH2F** hResidual;
     DLM_ResponseMatrix** RespMatrix;
     CATS** cat;
-
+    const unsigned NumCk;
 };
 
 

@@ -1,4 +1,13 @@
-//!CATS: Correlation Analysis Tools using the Schroedinger equation
+//!CATS:          Correlation Analysis Tools using the Schrödinger equation
+//!Version:       1.1 (27 June 2017)
+//!Author:        Dimitar Lubomirov Mihaylov
+//!Support:       dimitar.mihaylov(at)mytum.de
+//!Documentation: to follow
+
+//Notes for the next upgrade (1.2):
+//add the option to buffer the information about the source-data
+//in bins. This can save time when reevaluating C(k).
+
 #ifndef CATS_H
 #define CATS_H
 
@@ -14,6 +23,10 @@
 #include "DLM_CppTools.h"
 
 using namespace std;
+
+//this typedef it used to save the potentials for the
+//different channels as an array of function pointers.
+typedef double (*CatsPotential)(double*);
 
 //assumptions: the potential is radial-symmetric.
 //internally only Gaussian natural units (in MeV !!!) are used,
@@ -37,17 +50,13 @@ public:
     void SetPdgId(const int& id1, const int& id2);
     void GetPdgId(int& id1, int& id2);
 
-
     //If the number of polarizations is changed, all previous input about the
     //polarization themselves is lost (i.e. NumPW is reset!)
-    void SetNumPol(const unsigned short& numPol);
-    unsigned short GetNumPol();
+    void SetNumChannels(const unsigned short& numCh);
+    unsigned short GetNumChannels();
 
-    void SetNumPW(const unsigned short& usPol, const unsigned short& numPW);
-    unsigned short GetNumPW(const unsigned short& usPol);
-
-    //void SetIdenticalParticles(const bool& identical);
-    //bool GetIdenticalParticles();
+    void SetNumPW(const unsigned short& usCh, const unsigned short& numPW);
+    unsigned short GetNumPW(const unsigned short& usCh);
 
     void SetQ1Q2(const int& q1q2);
     int GetQ1Q2();
@@ -64,8 +73,8 @@ public:
     void SetIpBins(const unsigned& numBbins, const double* imppar);
     void SetIpBins(const unsigned& numBbins, const double& MinImpPar, const double& MaxImpPar);
 
-    void SetSpinWeight(const unsigned short& usPol, const double& weight);
-    double GetSpinWeight(const unsigned short& usPol);
+    void SetChannelWeight(const unsigned short& usCh, const double& weight);
+    double GetChannelWeight(const unsigned short& usCh);
 
     void SetStartRad(const double& srad);
     double GetStartRad();
@@ -145,8 +154,8 @@ public:
     double GetCorrFunIp(const unsigned& WhichMomBin, const unsigned& WhichIpBin);
     double GetCorrFunIp(const unsigned& WhichMomBin, const unsigned& WhichIpBin, double& Momentum, double& ImpPar);
 
-    double GetPhaseShift(const unsigned& WhichMomBin, const short& Pol, const short& Pw);
-    double EvalPhaseShift(const double& Momentum, const short& Pol, const short& Pw);
+    double GetPhaseShift(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW);
+    double EvalPhaseShift(const double& Momentum, const unsigned short& usCh, const unsigned short& usPW);
 
     //The momentum in the WhichMomBin-th bin
     double GetMomentum(const unsigned& WhichMomBin);
@@ -164,12 +173,13 @@ public:
     //[0]-[2] reserved for CATS ([0] is Radius (fm), [1] is Momentum, [2] is CosTheta)
     //n.b. for the time being CATS assumes radial symmetric potential, thus [2] is actually never used,
     //i.e. please always use only radial symmetric potential
-    double* PotPar;
+    double*** PotPar;
+
     void RemoveShortRangePotential();
-    void SetShortRangePotential(double (*pot)(const unsigned&, double* Pars), double* Pars);
-    void SetShortRangePotential(double (*pot)(const unsigned short&, double* Pars), double* Pars);
-    void SetShortRangePotential(double (*pot)(const int&, double* Pars), double* Pars);
-    void SetShortRangePotential(double (*pot)(const short&, double* Pars), double* Pars);
+    void RemoveShortRangePotential(const unsigned& usCh, const unsigned& usPW);
+    void SetShortRangePotential(const unsigned& usCh, const unsigned& usPW,
+                           double (*pot)(double* Pars), double* Pars);
+
 
     void RemoveAnaSource();
     //input vars: [0] should always be the momentum (MeV), [1] the radius (fm) and [2] 'cosθ'
@@ -197,7 +207,7 @@ private:
     int pdgID[2];
 
     //Number of polarizations
-    unsigned short NumPol;
+    unsigned short NumCh;
     //Number of partial waves for each polarization
     unsigned short* NumPW;
     bool IdenticalParticles;
@@ -244,7 +254,7 @@ private:
     //the corresponding bin, and the one extra element is the upper edge of the last bin.
     unsigned NumMomBins;
     double* MomBin;
-    double* SpinWeights;
+    double* ChannelWeight;
 
     unsigned NumIpBins;
     double* IpBin;
@@ -302,18 +312,12 @@ private:
     //after the wave-function is computed the result is saved (as a function of rho) in a equidistant grid
     //double FinalRhoGrid;
     //!------------------------------------------------
+    //!Stuff needed as an input for the numerical calculation
 
-    //!Functions needed as an input for the numerical calculation
-    double (*ShortRangePotentialUI)(const unsigned&, double* Pars);
-    double (*ShortRangePotentialUS)(const unsigned short&, double* Pars);
-    double (*ShortRangePotentialI)(const int&, double* Pars);
-    double (*ShortRangePotentialS)(const short&, double* Pars);
-
-    //this function selects the non-NULL function from the above three and uses
-    //this as the potential. Return 0 in case no potential is defined.
     //!THE INPUT FOR THE POTENTIAL IS ASSUMED TO BE IN [fm]
-    double ShortRangePotential(const unsigned short& Polarization);
-    //double ShortRangePotential(const double& Radius, const unsigned short& Polarization);
+    //!THE OUTPUT SHOULD BE IN [MeV]
+    CatsPotential** ShortRangePotential;
+
     double CoulombPotential(const double& Radius);
 
     //input vars: [0] should always be the momentum, [1] the radius and [2] 'cosθ'
@@ -387,8 +391,10 @@ private:
     void DelMomIpMp();
     //delete all variables that depend only on the number of b-bins
     void DelIp();
-    //delete all variables that depend on the number of momentum bins, number of polarizations and number of partial waves
-    void DelMomPolPw();
+    //delete all variables that depend only on the number of channels
+    void DelCh();
+    //delete all variables that depend on the number of momentum bins, number of channels and number of partial waves
+    void DelMomChPw();
     //delete all variables that depend only on the number of momentum bins
     void DelMom();
     //delete all variables that depend only on the number of momentum and b-bins
@@ -398,6 +404,8 @@ private:
     void DelAllMom();
     //delete all variables that depend on the number of b-bins
     void DelAllIp();
+    //delete all variables that depend on the number of channels
+    void DelAllCh();
 
     void DelAll();
 

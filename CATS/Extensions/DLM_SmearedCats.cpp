@@ -52,7 +52,7 @@ void DLM_SmearedCats::Correct(const bool& NewBinning){
         }
     }
     double MomentumTrue;
-    unsigned WhichMomBin;
+    //unsigned WhichMomBin;
 
     if(CorrectedCk && NewBinning){
         delete [] CorrectedCk; CorrectedCk=NULL;
