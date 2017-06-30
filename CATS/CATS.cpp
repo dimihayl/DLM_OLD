@@ -450,7 +450,8 @@ double CATS::GetStartRad(){
 
 void CATS::SetEpsilonProp(const double& epsp){
     if(EpsilonProp==fabs(epsp)) return;
-    EpsilonProp = fabs(epsp);
+    //make sure that EpsilonProp is always non-zero and positive
+    EpsilonProp = fabs(epsp)+1e-64;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 }
@@ -1098,7 +1099,7 @@ void CATS::ComputeWaveFunction(){
         double MinDeltaRad;
 
         PropagatingFunction(PropFunWithoutSI[0], PropFunVal[0], StartRad, Momentum, usPW, usCh);
-        MinDeltaRad = sqrt(fabs(EpsilonProp/PropFunVal[0]));
+        MinDeltaRad = sqrt(fabs(EpsilonProp/(PropFunVal[0]+1e-64)));
         MaxDeltaRad = sqrt(EpsilonProp/(Momentum*Momentum));
 
         if(MinDeltaRad>MaxDeltaRad) MinDeltaRad=MaxDeltaRad;
@@ -1213,7 +1214,7 @@ void CATS::ComputeWaveFunction(){
 
             PropagatingFunction(PropFunWithoutSI[kNew], PropFunVal[kNew], PosRad[kNew], Momentum, usPW, usCh);
 
-            DeltaRad2[kNew] = fabs(EpsilonProp/PropFunVal[kNew]);
+            DeltaRad2[kNew] = EpsilonProp/(fabs(PropFunVal[kNew])+1e-64);
             DeltaRad[kNew] = sqrt(DeltaRad2[kNew]);
             if(DeltaRad[kNew]<MinDeltaRad){
                 DeltaRad[kNew]=MinDeltaRad;
@@ -1226,9 +1227,9 @@ void CATS::ComputeWaveFunction(){
 
             BufferRad[NumComputedPoints] = PosRad[kNew];
 
-            Convergence =   fabs( (PropFunWithoutSI[kOld]-PropFunVal[kOld])/fabs(PropFunWithoutSI[kOld]+PropFunVal[kOld]+1e-64) ) < EpsilonConv &&
-                            fabs( (PropFunWithoutSI[kCurrent]-PropFunVal[kCurrent])/fabs(PropFunWithoutSI[kCurrent]+PropFunVal[kCurrent]+1e-64) ) < EpsilonConv &&
-                            fabs( (PropFunWithoutSI[kNew]-PropFunVal[kNew])/fabs(PropFunWithoutSI[kNew]+PropFunVal[kNew]+1e-64) ) < EpsilonConv;
+            Convergence =   fabs( (PropFunWithoutSI[kOld]-PropFunVal[kOld])/(fabs(PropFunWithoutSI[kOld]+PropFunVal[kOld])+1e-64) ) < EpsilonConv &&
+                            fabs( (PropFunWithoutSI[kCurrent]-PropFunVal[kCurrent])/(fabs(PropFunWithoutSI[kCurrent]+PropFunVal[kCurrent])+1e-64) ) < EpsilonConv &&
+                            fabs( (PropFunWithoutSI[kNew]-PropFunVal[kNew])/(fabs(PropFunWithoutSI[kNew]+PropFunVal[kNew])+1e-64) ) < EpsilonConv;
 
             //in case we have detected a Convergence
             //1) make sure the convergence is real and not a local artifact of the potential
@@ -1301,6 +1302,13 @@ void CATS::ComputeWaveFunction(){
             }
         }
 
+        //if the maximum wave-function is zero the computation will fail!
+        //By design this should not really happen.
+        if(!MaxConvergedNumWF){
+            printf("WARNING: MaxConvergedNumWF is zero, which is not allowed and points to a bug in the code!\n");
+            printf("         Please contact the developers and do not trust your current results!\n");
+        }
+
         //!Now follows the normalization of the numerical wave function to the asymptotic solution
         //the individual steps are explained in detail in the official CATS documentation
         if(MomBinConverged[uMomBin] || !ExcludeFailedConvergence){
@@ -1311,7 +1319,11 @@ void CATS::ComputeWaveFunction(){
 
             double DownShift=0;
             double UpShift=ShiftRadStepLen;
-            double NumRatio = BufferWaveFunction[StepOfMaxConvergedNumWF+1]/(BufferWaveFunction[StepOfMaxConvergedNumWF]+1e-64);
+            if(!BufferWaveFunction[StepOfMaxConvergedNumWF] || !BufferWaveFunction[StepOfMaxConvergedNumWF+1]){
+                printf("WARNING: BufferWaveFunction is zero, which is not allowed and points to a bug in the code!\n");
+                printf("         Please contact the developers and do not trust your current results!\n");
+            }
+            double NumRatio = BufferWaveFunction[StepOfMaxConvergedNumWF+1]/BufferWaveFunction[StepOfMaxConvergedNumWF];
             double DownValue;
             double UpValue;
             double SignProduct;
@@ -1594,6 +1606,11 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                     &Mass[WhichIpBin][NePart],
                     &RadCrd[WhichIpBin][NePart][1],&RadCrd[WhichIpBin][NePart][2],&RadCrd[WhichIpBin][NePart][3],&RadCrd[WhichIpBin][NePart][0]);
 
+            if(MomCrd[WhichIpBin][NePart][0]==0){
+                printf("WARNING! Possible bad input-file, there are particles with zero energy!\n");
+                continue;
+            }
+
             EventID[NePart] = NumEvents;
 
             if(ParticleID[WhichIpBin][NePart]!=pdgID[0] && ParticleID[WhichIpBin][NePart]!=pdgID[1])
@@ -1692,6 +1709,11 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                         Booster.Boost(MomC);
                         Booster.Boost(MomC2);
 
+                        if(!MomC[0]){
+                            printf("WARNING! A strange bug occurred (MomC[0]==0), please investigate and/or contact the developers!\n");
+                            printf("         The current output might be wrong!\n");
+                        }
+
                         dRadVec[1] += MomC[1]/MomC[0]*dRadVec[0];
                         dRadVec[2] += MomC[2]/MomC[0]*dRadVec[0];
                         dRadVec[3] += MomC[3]/MomC[0]*dRadVec[0];
@@ -1705,7 +1727,7 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
 
                     bool Selected = true;
 
-                    if(RelPosCom>256 || RelPosCom!=RelPosCom || RelPosCom==0){
+                    if(RelPosCom>256 || RelPosCom!=RelPosCom || RelPosCom==0 || RelMomCom==0){
                         Selected = false;
                     }
 
@@ -1888,10 +1910,10 @@ void CATS::FoldSourceAndWF(){
 
 void CATS::FoldAnaSourceAndWF(){
 //!OPTIMIZE?
-    //const unsigned NumRadPts = ThetaDependentSource?512:2048;
-    const unsigned NumRadPts = 1024;
+    const unsigned NumRadPts = ThetaDependentSource?256:1024;
+    //const unsigned NumRadPts = 1024;
     const double RadStepLen = MaxRad/double(NumRadPts-1)*NuToFm;
-    const unsigned NumCosThPts = ThetaDependentSource?128:1;
+    const unsigned NumCosThPts = ThetaDependentSource?64:1;
     const double CosThStepLen = 2./double(NumCosThPts-1);
     double& Momentum = AnaSourcePar[0];
     double& Radius = AnaSourcePar[1];
@@ -1903,9 +1925,9 @@ void CATS::FoldAnaSourceAndWF(){
             Radius = 0.5*RadStepLen+RadStepLen*double(uRad);
             if(ThetaDependentSource){
                 for(unsigned uCT=0; uCT<NumCosThPts; uCT++){
-                    CosTheta = CosThStepLen*double(uCT);
+                    CosTheta = CosThStepLen*double(uCT)-1;
                     CorrFun[uMomBin][NumIpBins] += RadStepLen*CosThStepLen*AnalyticSource(AnaSourcePar)*
-                    EffectiveFunctionTheta(Radius*FmToNu, Momentum, CosTheta);
+                    EffectiveFunctionTheta(Radius*FmToNu, Momentum, CosTheta)*0.5;
                 }
             }
             else{
@@ -1950,9 +1972,11 @@ void CATS::FoldDataSourceAndWF(){
                 Radius = RelativePosition[uMomBin][uIpBin][uPair];
                 Momentum = RelativeMomentum[uMomBin][uIpBin][uPair];
                 CosTheta = RelativeCosTheta[uMomBin][uIpBin][uPair];
+
                 TotWF = ThetaDependentSource?   EffectiveFunctionTheta(Radius, Momentum, CosTheta):
                                                 EffectiveFunction(Radius, Momentum);
                 CorrFun[uMomBin][uIpBin] += TotWF;
+
                 Stdev[uIpBin] += TotWF*TotWF;
 
                 //if the event mixing is switched off, the total correlation function
@@ -1987,7 +2011,6 @@ void CATS::FoldDataSourceAndWF(){
             }
 
         }//for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-
 
         if(!MomBinConverged && ExcludeFailedConvergence){
             CorrFun[uMomBin][NumIpBins] = 0;
@@ -2086,7 +2109,11 @@ double CATS::NewtonRapson(double (CATS::*Function)(const double&, const double&,
     for(unsigned iIter=0; iIter<maxIter; iIter++){
         fVal = (this->*Function)(xVal, Momentum, usPW)-fValShift;
         DeltaF = (this->*Function)(xVal+EpsilonX, Momentum, usPW)-fValShift - fVal;
-        DeltaX = -fVal*EpsilonX/DeltaF;
+        if(!DeltaF){
+            DeltaX=1;
+            printf("WARNING: Something is fishy with the NewtonRapson solver! Might be a bug! Please contact the developers!\n");
+        }
+        else DeltaX = -fVal*EpsilonX/DeltaF;
         xVal += DeltaX;
 
         int counter = 0;
@@ -2121,11 +2148,17 @@ double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
     //double& MaxSavedRad = WFR[SWFB-1];
 
     unsigned RadBin = GetRadBin(Radius, uMomBin, usCh, usPW);
-    double MultFactor = DivideByR?1./Radius:1;
+    double MultFactor = DivideByR?1./(Radius+1e-64):1;
+
+    double DeltaWFR = WFR[RadBin+1]-WFR[RadBin];
+    if(!DeltaWFR){
+        DeltaWFR = 1-64;
+        printf("WARNING: DeltaWFR==0, which might point to a bug! Please contact the developers!\n");
+    }
 
     //make a linear extrapolation
     if(RadBin<SWFB-1){
-        return WFU[RadBin]*MultFactor+(WFU[RadBin+1]*MultFactor-WFU[RadBin]*MultFactor)*(Radius-WFR[RadBin])/(WFR[RadBin+1]-WFR[RadBin]);
+        return WFU[RadBin]*MultFactor+(WFU[RadBin+1]*MultFactor-WFU[RadBin]*MultFactor)*(Radius-WFR[RadBin])/DeltaWFR;
     }
     else{
         return ReferencePartialWave(Radius+PhaseShift[uMomBin][usCh][usPW]/Momentum, Momentum, usPW);
@@ -2134,6 +2167,7 @@ double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
 
 double CATS::EffectiveFunction(const double& Radius, const double& Momentum, const unsigned short& usCh){
     double Result;
+    double OldResult=100;
     double TotalResult=0;
 
     for(unsigned short usPW=0; usPW<1000; usPW++){
@@ -2145,11 +2179,12 @@ double CATS::EffectiveFunction(const double& Radius, const double& Momentum, con
             TotalResult += double(2*usPW+1)*Result*Result;
         }
         else{
-            Result = ReferencePartialWave(Radius, Momentum, usPW)/Radius;
+            Result = ReferencePartialWave(Radius, Momentum, usPW)/(Radius+1e-64);
             Result = double(2*usPW+1)*Result*Result;
             TotalResult += Result;
             //convergence criteria
-            if(usPW>=NumPW[usCh] && fabs(Result)<1e-7 && fabs(Result)<1e-8) break;
+            if(usPW>=NumPW[usCh] && fabs(OldResult)<1e-7 && fabs(Result)<1e-8) break;
+            OldResult = Result;
         }
     }
 
@@ -2166,6 +2201,7 @@ double CATS::EffectiveFunction(const double& Radius, const double& Momentum){
 
 double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usCh){
     double Result;
+    double OldResult=100;
     double TotalResult=0;
 
     for(unsigned short usPW=0; usPW<1000; usPW++){
@@ -2177,10 +2213,11 @@ double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum
             TotalResult += Result*Result;
         }
         else{
-            Result = double(2*usPW+1)*ReferencePartialWave(Radius, Momentum, usPW)/Radius*gsl_sf_legendre_Pl(usPW,CosTheta);
+            Result = double(2*usPW+1)*ReferencePartialWave(Radius, Momentum, usPW)/(Radius+1e-64)*gsl_sf_legendre_Pl(usPW,CosTheta);
             Result = Result*Result;
             TotalResult += Result;
-            if(usPW>=NumPW[usCh] && fabs(Result)<1e-7 && fabs(Result)<1e-8) break;
+            if(usPW>=NumPW[usCh] && fabs(OldResult)<1e-7 && fabs(Result)<1e-8) break;
+            OldResult = Result;
         }
     }
 

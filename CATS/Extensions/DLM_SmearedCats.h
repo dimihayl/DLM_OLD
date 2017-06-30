@@ -11,7 +11,6 @@
 class DLM_SmearedCats{
 
 public:
-
     DLM_SmearedCats(CATS** InCat, const unsigned& numCk);
     ~DLM_SmearedCats();
 
@@ -24,8 +23,8 @@ public:
     double EvalCorrectedCkErr(const double& Momentum);
 
     void Correct(const bool& NewBinning);
-private:
 
+private:
     double* LambdaCoeff;
     double* CorrectedCk;
     double* CorrectedCkErr;
@@ -34,6 +33,7 @@ private:
     DLM_ResponseMatrix** RespMatrix;
     CATS** cat;
     const unsigned NumCk;
+
 };
 
 

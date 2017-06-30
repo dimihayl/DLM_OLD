@@ -4,3 +4,6 @@ I have added the possibility to make a cut on the total momentum of the pairs. T
 -The potentials are now saved as an array of functions (ShortRangePotential). I have changed the "polarization" therminology with "channels". 
 -The user can now have multiple channels (e.g. related to the spin) and for each of them all partial-wave potentials need to be defined!
 -The potential itself should be defined as f(double* par)
+
+30.06.2017
+-I made the code much more robust against division by zero. This fixed a bug resulting in 'nan' states of C(k) in some rare cases.

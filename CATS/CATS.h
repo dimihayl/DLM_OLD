@@ -374,18 +374,18 @@ private:
     //the computed range we use the shifted reference wave. If DivideByR==true, computed is R = u/r.
     //N.B. The result would differ from EvalWaveFunctionU/Radius due to the extrapolation done.
     double EvalWaveFunctionU(const double& Radius, const double& Momentum,
-                             const unsigned short& usPol, const unsigned short& usPW, const bool& DivideByR);
-    double EffectiveFunction(const double& Radius, const double& Momentum, const unsigned short& usPol);
+                             const unsigned short& usCh, const unsigned short& usPW, const bool& DivideByR);
+    double EffectiveFunction(const double& Radius, const double& Momentum, const unsigned short& usCh);
     double EffectiveFunction(const double& Radius, const double& Momentum);
 
-    double EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usPol);
+    double EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usCh);
     double EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta);
 
     //computes the momentum bin corresponding to Momentum
     unsigned GetBin(const double& Value, const double* Range, const unsigned& NumBins);
     //computes the radius bin corresponding to Radius (for a certain l and S)
     unsigned GetRadBin(const double& Radius, const unsigned& uMomBin,
-                       const unsigned short& usPol, const unsigned short& usPW);
+                       const unsigned short& usCh, const unsigned short& usPW);
 
     //delete all variables that depend only on the number of momentum bins, b-bins and MaxPairs
     void DelMomIpMp();
