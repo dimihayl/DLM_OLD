@@ -671,6 +671,65 @@ void CATS::GetInputFileName(char* fname){
     strcpy(fname, InputFileName);
 }
 
+unsigned CATS::GetNumPairsPerBin(const unsigned& uMomBin, const unsigned& uIpBin){
+    if(uMomBin>=NumMomBins || uIpBin>=NumIpBins || !LoadingComplete) return 0;
+    return LoadedPairsPerBin[uMomBin][uIpBin];
+}
+
+void CATS::GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair,
+                     double& RelMom, double& RelPos, double& RelCosTh, double& TotMom){
+    RelMom=0;
+    RelPos=0;
+    RelCosTh=0;
+    TotMom=0;
+    if(!LoadingComplete) return;
+    if(uMomBin>=NumMomBins) return;
+    if(uIpBin>=NumIpBins) return;
+    if(uWhichPair>=LoadedPairsPerBin[uMomBin][uIpBin]) return;
+    RelMom=RelativeMomentum[uMomBin][uIpBin][uWhichPair];
+    RelPos=RelativePosition[uMomBin][uIpBin][uWhichPair]*NuToFm;
+    RelCosTh=RelativeCosTheta[uMomBin][uIpBin][uWhichPair];
+    TotMom=UseTotMomCut?TotalPairMomentum[uMomBin][uIpBin][uWhichPair]:0;
+}
+void CATS::GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair, double* Output){
+    GetPairInfo(uMomBin,uIpBin,uWhichPair,
+                Output[0],Output[1],Output[2],Output[3]);
+}
+unsigned CATS::GetLoadedPairs(const unsigned& WhichMomBin, const unsigned& WhichIpBin){
+    if(!LoadingComplete) return 0;
+    if(WhichMomBin>=NumMomBins) return 0;
+    if(WhichIpBin>=NumIpBins) return 0;
+    return LoadedPairsPerBin[WhichMomBin][WhichIpBin];
+}
+unsigned CATS::GetRelativeMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
+    if(!LoadingComplete) return 0;
+    if(WhichMomBin>=NumMomBins) return 0;
+    if(WhichIpBin>=NumIpBins) return 0;
+    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
+    return RelativeMomentum[WhichMomBin][WhichIpBin][WhichParticle];
+}
+unsigned CATS::GetRelativePosition(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
+    if(!LoadingComplete) return 0;
+    if(WhichMomBin>=NumMomBins) return 0;
+    if(WhichIpBin>=NumIpBins) return 0;
+    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
+    return RelativePosition[WhichMomBin][WhichIpBin][WhichParticle]*NuToFm;
+}
+unsigned CATS::GetRelativeCosTheta(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
+    if(!LoadingComplete) return 0;
+    if(WhichMomBin>=NumMomBins) return 0;
+    if(WhichIpBin>=NumIpBins) return 0;
+    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
+    return RelativeCosTheta[WhichMomBin][WhichIpBin][WhichParticle];
+}
+unsigned CATS::GetTotalPairMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
+    if(!LoadingComplete) return 0;
+    if(WhichMomBin>=NumMomBins) return 0;
+    if(WhichIpBin>=NumIpBins) return 0;
+    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
+    return TotalPairMomentum[WhichMomBin][WhichIpBin][WhichParticle];
+}
+
 double CATS::GetCorrFun(const unsigned& WhichMomBin){
     if(WhichMomBin>=NumMomBins || !CorrFun) return 0;
     return CorrFun[WhichMomBin][NumIpBins];
@@ -1913,7 +1972,7 @@ void CATS::FoldAnaSourceAndWF(){
     const unsigned NumRadPts = ThetaDependentSource?256:1024;
     //const unsigned NumRadPts = 1024;
     const double RadStepLen = MaxRad/double(NumRadPts-1)*NuToFm;
-    const unsigned NumCosThPts = ThetaDependentSource?64:1;
+    const unsigned NumCosThPts = ThetaDependentSource?256:1;
     const double CosThStepLen = 2./double(NumCosThPts-1);
     double& Momentum = AnaSourcePar[0];
     double& Radius = AnaSourcePar[1];
@@ -1927,14 +1986,13 @@ void CATS::FoldAnaSourceAndWF(){
                 for(unsigned uCT=0; uCT<NumCosThPts; uCT++){
                     CosTheta = CosThStepLen*double(uCT)-1;
                     CorrFun[uMomBin][NumIpBins] += RadStepLen*CosThStepLen*AnalyticSource(AnaSourcePar)*
-                    EffectiveFunctionTheta(Radius*FmToNu, Momentum, CosTheta)*0.5;
+                    EffectiveFunctionTheta(Radius*FmToNu, Momentum, CosTheta);
                 }
             }
             else{
                 CorrFun[uMomBin][NumIpBins] += RadStepLen*AnalyticSource(AnaSourcePar)*
                 EffectiveFunction(Radius*FmToNu, Momentum);
             }
-
         }
     }
     ComputedCorrFunction = true;
@@ -2200,27 +2258,56 @@ double CATS::EffectiveFunction(const double& Radius, const double& Momentum){
 }
 
 double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usCh){
-    double Result;
-    double OldResult=100;
+    double Result1;
+    double Result2;
+    double OldResult1=100;
+    double OldResult2=100;
+    double TotalResultRe=0;
+    double TotalResultIm=0;
     double TotalResult=0;
+
+    short oddness;
 
     for(unsigned short usPW=0; usPW<1000; usPW++){
         //wave function symmetrization
         if( IdenticalParticles && (usPW+usCh)%2 ) continue;
-        //numerical solution, no computation result for zero potential
         if(usPW<NumPW[usCh] && ShortRangePotential[usCh][usPW]){
-            Result = double(2*usPW+1)*EvalWaveFunctionU(Radius, Momentum, usCh, usPW, true)*gsl_sf_legendre_Pl(usPW,CosTheta);
-            TotalResult += Result*Result;
+            Result1 = double(2*usPW+1)*EvalWaveFunctionU(Radius, Momentum, usCh, usPW, true)*gsl_sf_legendre_Pl(usPW,CosTheta);
         }
         else{
-            Result = double(2*usPW+1)*ReferencePartialWave(Radius, Momentum, usPW)/(Radius+1e-64)*gsl_sf_legendre_Pl(usPW,CosTheta);
-            Result = Result*Result;
-            TotalResult += Result;
-            if(usPW>=NumPW[usCh] && fabs(OldResult)<1e-7 && fabs(Result)<1e-8) break;
-            OldResult = Result;
+            Result1 = double(2*usPW+1)*ReferencePartialWave(Radius, Momentum, usPW)/(Radius+1e-64)*gsl_sf_legendre_Pl(usPW,CosTheta);
+            if(usPW>=NumPW[usCh] && fabs(OldResult1)<3.16e-4 && fabs(Result1)<1e-4) break;
+            OldResult1 = Result1;
+        }
+        //if the source is theta dep, than we cannot simply neglect the cross-terms in the PW expansion (coming from |ψ|^2).
+        //thus we need to loop over all partial waves twice
+        for(unsigned short usPW2=0; usPW2<1000; usPW2++){
+            //wave function symmetrization
+            if( IdenticalParticles && (usPW2+usCh)%2 ) continue;
+            if(usPW2<NumPW[usCh] && ShortRangePotential[usCh][usPW2]){
+                Result2 = double(2*usPW2+1)*EvalWaveFunctionU(Radius, Momentum, usCh, usPW2, true)*gsl_sf_legendre_Pl(usPW2,CosTheta);
+            }
+            else{
+                Result2 = double(2*usPW2+1)*ReferencePartialWave(Radius, Momentum, usPW2)/(Radius+1e-64)*gsl_sf_legendre_Pl(usPW2,CosTheta);
+                if(usPW2>=NumPW[usCh] && fabs(OldResult2)<3.16e-4 && fabs(Result2)<1e-4) break;
+                OldResult2 = Result2;
+            }
+            //this is related to the i^l coefficient in the PW expansion. If we multiply two partial waves, say l and m* (complex conj.),
+            //than we have -(i)^(l+3*m), which is either +-1 or +-i depending on l+m. => we sum up the real and imaginary part
+            //separately and then compute the total result at the end.
+            oddness = (usPW+3*usPW2)%4;
+            switch(oddness){
+                case 0 : TotalResultRe += (Result2*Result1); break;
+                case 1 : TotalResultIm += (Result2*Result1); break;
+                case 2 : TotalResultRe -= (Result2*Result1); break;
+                case 3 : TotalResultIm -= (Result2*Result1); break;
+                default :   printf("WARNING: oddness gets a default switch. This should not happen => bug\n");
+                            printf("         Please contact the developers!\n");
+                            break;
+            }
         }
     }
-
+    TotalResult = sqrt(TotalResultRe*TotalResultRe+TotalResultIm*TotalResultIm);
     return TotalResult*(1+IdenticalParticles);
 }
 
@@ -2268,8 +2355,6 @@ unsigned CATS::GetRadBin(const double& Radius, const unsigned& uMomBin,
                          const unsigned short& usCh, const unsigned short& usPW){
     return GetBin(Radius, WaveFunRad[uMomBin][usCh][usPW], SavedWaveFunBins[uMomBin][usCh][usPW]);
 }
-
-
 
 CATSboost::CATSboost(double& g, double& bX, double& bY, double& bZ):gamma(g),betaX(bX),betaY(bY),betaZ(bZ){
 

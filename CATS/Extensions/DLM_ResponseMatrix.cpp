@@ -208,6 +208,12 @@ void DLM_ResponseMatrix::ConvertMatrix(const int& WhichMatr, TH2F* input, const 
         WhichBinAtLowEdgeX = Xaxis->FindBin(MomLowEdgeX);
         WhichBinAtUpEdgeX = Xaxis->FindBin(MomUpEdgeX);
         NumOldBinsX = WhichBinAtUpEdgeX - WhichBinAtLowEdgeX + 1;
+//Printf("MomLowEdgeX=%f", MomLowEdgeX);
+//Printf("MomUpEdgeX=%f", MomUpEdgeX);
+//Printf("WhichBinAtLowEdgeX=%i", WhichBinAtLowEdgeX);
+//Printf("WhichBinAtUpEdgeX=%i", WhichBinAtUpEdgeX);
+//Printf("Xaxis->GetBinLowEdge(%i)=%f", iBinX, Xaxis->GetBinLowEdge(iBinX));
+//usleep(2000e3);
         if(NumOldBinsX>MaxBufferSize){
             printf("ERROR: DLM_ResponseMatrix::ConvertMatrix hates you since NumOldBinsX>MaxBufferSize\nA CRASH SHOULD FOLLOW!\n");
         }

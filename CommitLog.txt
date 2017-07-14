@@ -7,3 +7,9 @@ I have added the possibility to make a cut on the total momentum of the pairs. T
 
 30.06.2017
 -I made the code much more robust against division by zero. This fixed a bug resulting in 'nan' states of C(k) in some rare cases.
+
+13.07.2017, CATS 1.2
+-there was a major flaw in the way the folding was performed under the assuption that the angle theta should be taken into account.
+ This issue has been now correctly implemented.
+-I have added some new Get-function in CATS (to access the info about the data-source)
+

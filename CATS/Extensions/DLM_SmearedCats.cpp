@@ -6,9 +6,11 @@ DLM_SmearedCats::DLM_SmearedCats(CATS** InCat, const unsigned& numCk):
     hResolution = NULL;
     hResidual = new TH2F* [NumCk];
     RespMatrix = new DLM_ResponseMatrix* [NumCk];
+    EvalUsingEquation = new int [NumCk];
     for(unsigned uCk=0; uCk<NumCk; uCk++){
         hResidual[uCk] = NULL;
         RespMatrix[uCk] = NULL;
+        EvalUsingEquation[uCk] = 0;
     }
     CorrectedCk = NULL;
     CorrectedCkErr = NULL;
@@ -35,6 +37,21 @@ void DLM_SmearedCats::SetResidualMatrix(const unsigned& WhichNr, TH2F* residual)
 
 void DLM_SmearedCats::SetLambda(const unsigned& WhichNr, const double& lam){
     LambdaCoeff[WhichNr] = lam;
+}
+
+void DLM_SmearedCats::SetUseLednicky(const unsigned& WhichNr, const int& val, const double& grad,
+                                     const double& ScattLen1, const double& EffRan1,
+                                     const double& ScattLen3, const double& EffRan3,
+                                     const double& ares, const double& arad, const double& lambda0){
+    EvalUsingEquation[WhichNr] = val;
+    GaussR = grad;
+    ScattLenSin = ScattLen1;
+    EffRangeSin = EffRan1;
+    ScattLenTri = ScattLen3;
+    EffRangeTri = EffRan3;
+    aResidual = ares;
+    ResidualR = arad;
+    LambdaLedni = lambda0;
 }
 
 void DLM_SmearedCats::Correct(const bool& NewBinning){
@@ -67,6 +84,9 @@ void DLM_SmearedCats::Correct(const bool& NewBinning){
         CorrectedCkErr = new double [cat[0]->GetNumMomBins()];
     }
 
+    double CkVal;
+    double CkValErr;
+
     for(unsigned uBinSmear=0; uBinSmear<cat[0]->GetNumMomBins(); uBinSmear++){
         CorrectedCk[uBinSmear] = 0;
         CorrectedCkErr[uBinSmear] = 0;
@@ -75,12 +95,31 @@ void DLM_SmearedCats::Correct(const bool& NewBinning){
             MomentumTrue = cat[0]->GetMomentum(uBinTrue);
             for(unsigned uCk=0; uCk<NumCk; uCk++){
                 if(RespMatrix[uCk] && cat[uCk]){
+                    switch(EvalUsingEquation[uCk]){
+                        case 0 :    CkVal = cat[uCk]->EvalCorrFun(MomentumTrue);
+                                    CkValErr = cat[uCk]->EvalCorrFunErr(MomentumTrue);
+                                    break;
+                        case 1 :    CkVal = CkLednicky(MomentumTrue, false, false);
+                                    CkValErr = 0;
+                                    break;
+                        case 2 :    CkVal = CkLednicky(MomentumTrue, false, true);
+                                    CkValErr = 0;
+                                    break;
+                        case 3 :    CkVal = CkLednicky(MomentumTrue, true, false);
+                                    CkValErr = 0;
+                                    break;
+                        case 4 :    CkVal = CkLednicky(MomentumTrue, true, true);
+                                    CkValErr = 0;
+                                    break;
+                        default:    CkVal = 0;
+                                    CkValErr = 0;
+                                    break;
+                    }
+
                     CorrectedCk[uBinSmear] +=   LambdaCoeff[uCk]*
-                                    RespMatrix[uCk]->ResponseMatrix[uBinSmear][uBinTrue]*
-                                    cat[uCk]->EvalCorrFun(MomentumTrue);
+                                    RespMatrix[uCk]->ResponseMatrix[uBinSmear][uBinTrue]*CkVal;
                     CorrectedCkErr[uBinSmear] +=   LambdaCoeff[uCk]*
-                                    RespMatrix[uCk]->ResponseMatrix[uBinSmear][uBinTrue]*
-                                    cat[uCk]->EvalCorrFunErr(MomentumTrue);
+                                    RespMatrix[uCk]->ResponseMatrix[uBinSmear][uBinTrue]*CkValErr;
                 }
             }
         }
@@ -179,4 +218,42 @@ double DLM_SmearedCats::EvalCorrectedCkErr(const double& Momentum){
             CkRange[0]*(Momentum-InterpolRange[1]))/
             (InterpolRange[1]-InterpolRange[0]);
 }
+
+double DLM_SmearedCats::CkLednicky(const double& Momentum, const bool& SinOnly, const bool& QS, const bool& WithLambda){
+    const std::complex<double> i(0,1);
+    const double Pi(3.141592653589793);
+
+    double F1 = gsl_sf_dawson(2.*Momentum*GaussR)/(2.*Momentum*GaussR);
+    double F2 = (1.-exp(-4.*Momentum*Momentum*GaussR*GaussR))/(2.*Momentum*GaussR);
+
+    complex<double> ScattAmplSin = pow(1./ScattLenSin+0.5*EffRangeSin*Momentum*Momentum-i*Momentum,-1.);
+
+    double CkValue = 0.;
+    CkValue +=  0.5*pow(abs(ScattAmplSin)/GaussR,2)*(1-(EffRangeSin)/(2*sqrt(Pi)*GaussR))+
+                2*real(ScattAmplSin)*F1/(sqrt(Pi)*GaussR)-imag(ScattAmplSin)*F2/GaussR;
+    //so far this is the eq. for singlet only, w/o QS
+
+    //if we need to include the triplet, we add the term with a weight factor of 3 more than the singlet.
+    //since however the correct norm. coeff. are 0.25 and 0.75 we need to divide by 4 to get the final result
+    if(!SinOnly){
+        complex<double> ScattAmplTri = pow(1./ScattLenTri+0.5*EffRangeTri*Momentum*Momentum-i*Momentum,-1.);
+        CkValue +=  3*(
+                    0.5*pow(abs(ScattAmplTri)/GaussR,2)*(1-(EffRangeTri)/(2*sqrt(Pi)*GaussR))+
+                    2*real(ScattAmplTri)*F1/(sqrt(Pi)*GaussR)-imag(ScattAmplTri)*F2/GaussR);
+        CkValue *= 0.25;
+    }
+    //if we have to include QS we need to add a correction factor and normalize by factor of 1/2
+    if(QS){
+        CkValue -= exp(-GaussR*GaussR*4.*Momentum*Momentum);
+        CkValue *= 0.5;
+    }
+
+    CkValue += 1;
+    CkValue *= LambdaLedni;
+    CkValue += (1.-LambdaLedni)*(1+aResidual*exp(-ResidualR*ResidualR*4.*Momentum*Momentum));
+    //CkValue += aResidual*exp(-ResidualR*ResidualR*4.*Momentum*Momentum);
+
+    return CkValue;
+}
+
 

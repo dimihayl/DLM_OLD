@@ -133,6 +133,16 @@ public:
     void SetInputFileName(const char* fname);
     void GetInputFileName(char* fname);
 
+    unsigned GetNumPairsPerBin(const unsigned& uMomBin, const unsigned& uIpBin);
+    void GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair,
+                     double& RelMom, double& RelPos, double& RelCosTh, double& TotMom);
+    void GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair, double* Output);
+    unsigned GetLoadedPairs(const unsigned& WhichMomBin, const unsigned& WhichIpBin);
+    unsigned GetRelativeMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
+    unsigned GetRelativePosition(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
+    unsigned GetRelativeCosTheta(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
+    unsigned GetTotalPairMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
+
 //    void SetLogFileName(const char* fname);
 //    void GetLogFileName(char* fname);
 
@@ -426,6 +436,8 @@ private:
     //CorrFun[...][NumIpBins] is the total correlation function
     double** CorrFun;
     double** CorrFunError;
+
+
 
 
     //!------------------------------------------------
