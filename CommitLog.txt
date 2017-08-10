@@ -13,3 +13,17 @@ I have added the possibility to make a cut on the total momentum of the pairs. T
  This issue has been now correctly implemented.
 -I have added some new Get-function in CATS (to access the info about the data-source)
 
+10.08.2017, CATS 1.4
+this is a huge commit, since there was the need to change the computing grid.
+There is an intermediate version 1.3 that was never commited due to some problems with it.
+In the end version 1.4 should be something as a beta-version to a planned version 2.0.
+The new computing grid in 1.4 works as follows:
+for each k,b bin one looks at the source functions and creates a source-grid. The source-grid 
+is practically a tree, which is divided into segments until the value of the source function 
+reaches some minimal value. This allows to create as few grid-bins as possible and save memory and computing time.
+HOWEVER: there is one big issue that needs to be taken care of in 2.0 :
+a single k,b bins has on average quite few entries, which leads to issues when subdividing the grid, 
+e.g. we never actually reach the desired low-limit and form a lot of zero-valued grid bins. In addition, if we have a lot of 
+b-bins computing time will be quite large. The idea for 2.0 is to to make the grid the same for all b-bins based on all particle 
+pairs regardless of their b-value. Then evaluate the wave-function for each grid-bin and save this value. Such a procedure will 
+make sure that we do not re-evaluate the wave-function for each b-bin!

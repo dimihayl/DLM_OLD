@@ -21,6 +21,8 @@
 #include "gsl_sf_legendre.h"
 
 #include "DLM_CppTools.h"
+#include "DLM_MergeSort.h"
+#include "CATStools.h"
 
 using namespace std;
 
@@ -36,9 +38,13 @@ typedef double (*CatsPotential)(double*);
 //!for the radii: [fm]
 
 class CATS;
+class CATScontainerOLD;
+class CATSelder;
+class CATSnode;
 
 class CATS{
-
+//friend class CATSelder;
+friend class CATSnode;
 public:
     CATS();
     ~CATS();
@@ -95,6 +101,20 @@ public:
     void SetExcludeFailedBins(const bool& efb);
     bool GetExcludeFailedBins();
 
+    void SetMaxGridDepth(const short& mgd);
+    short GetMaxGridDepth();
+    void SetSourceMinValOnGrid(const double& smvg);
+    double GetSourceMinValOnGrid();
+    void SetMaxNumGridPart(const unsigned& mngp);
+    unsigned GetMaxNumGridPart();
+
+    void SetGridMinDepth(const short& val);
+    short GetGridMinDepth();
+    void SetGridMaxDepth(const short& val);
+    short GetGridManDepth();
+    void SetGridEpsilon(const double& val);
+    double GetGridEpsilon();
+
     void SetUseAnalyticSource(const bool& val);
     bool GetUseAnalyticSource();
 
@@ -134,14 +154,17 @@ public:
     void GetInputFileName(char* fname);
 
     unsigned GetNumPairsPerBin(const unsigned& uMomBin, const unsigned& uIpBin);
-    void GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair,
+    unsigned GetNumPairsPerBin(const unsigned& uMomBin);
+
+    void GetPairInfo(const unsigned& uMomBin, const unsigned& uWhichPair,
                      double& RelMom, double& RelPos, double& RelCosTh, double& TotMom);
-    void GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair, double* Output);
+    void GetPairInfo(const unsigned& uMomBin, const unsigned& uWhichPair, double* Output);
+
     unsigned GetLoadedPairs(const unsigned& WhichMomBin, const unsigned& WhichIpBin);
-    unsigned GetRelativeMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
-    unsigned GetRelativePosition(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
-    unsigned GetRelativeCosTheta(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
-    unsigned GetTotalPairMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle);
+    unsigned GetRelativeMomentum(const unsigned& WhichMomBin, const unsigned& WhichParticle);
+    unsigned GetRelativePosition(const unsigned& WhichMomBin, const unsigned& WhichParticle);
+    unsigned GetRelativeCosTheta(const unsigned& WhichMomBin, const unsigned& WhichParticle);
+    unsigned GetTotalPairMomentum(const unsigned& WhichMomBin, const unsigned& WhichParticle);
 
 //    void SetLogFileName(const char* fname);
 //    void GetLogFileName(char* fname);
@@ -284,15 +307,24 @@ private:
 
     //break the numerical computation if the algorithm has failed to converge to the asymptotic solution up to
     //a particular Radius value. By default MaxRad==32 fm
+    //N.B. this parameter has an influence on the data that is loaded for the source. I.e. changing it will influence not only
+    //the Schr. solver but also the source.
     double MaxRad;
 
     //the same, but this time a condition for rho. Both conditions are useful and needed, since at high momenta the
     //convergence region is much more determined by the radius, but at low momenta the rho coefficient may be much
     //more important in the presence of a short-range potential. The default value is 16
+    //N.B. this parameter influences ONLY the Schroedinger solver (unlike MaxRad)
     double MaxRho;
 
     bool ExcludeFailedConvergence;
 
+    //5 = default value
+    short GridMinDepth;
+    //0 = default value (14 for 1D grid, 10 for 2D grid)
+    short GridMaxDepth;
+    //0 = default value (1/1024 for 1D grid, 1/8192 for 2D grid), max value is 0.125
+    double GridEpsilon;
 
     char* InputFileName;
 //    char* LogFileName;
@@ -303,14 +335,25 @@ private:
     //N.B. at the moment the error is overestimated, due to the assumption that all WeightIps are independent.
     //this should be a fairly small effect though, thus it is probably okay to leave the code as it is.
     double* WeightIpError;
-    //in bins of momentum/ImpactParameter
-    double*** RelativeMomentum;
-    double*** RelativePosition;
-    double*** RelativeCosTheta;
-    double*** TotalPairMomentum;
-    unsigned** LoadedPairsPerBin;
 
-    bool LoadingComplete;
+    //in bins of momentum
+    unsigned* LoadedPairsPerMomBin;
+    //in bins of momentum/ImpactParameter
+    unsigned** LoadedPairsPerBin;
+    //in bins of momentum/all particle pairs
+    double** RelativeMomentum;
+    double** RelativePosition;
+    double** RelativeCosTheta;
+    double** TotalPairMomentum;
+    unsigned** PairIpBin;
+    unsigned** GridBoxId;
+    CATSelder*** SourceGrid;
+
+    //CATScontainerOLD*** ParticleContainer1D;
+    //CATScontainerOLD*** ParticleContainer2D;
+
+    bool LoadedData;//i.e. the data-file was read
+    bool SourceGridReady;//i.e. the Particle container is set up properly
     bool ComputedWaveFunction;
     bool ComputedCorrFunction;
 
@@ -358,8 +401,8 @@ private:
     void ComputeWaveFunction();
     void LoadData(const unsigned short& NumBlankHeaderLines=3);
     void FoldSourceAndWF();
-    void FoldAnaSourceAndWF();
-    void FoldDataSourceAndWF();
+    void SortAllData();
+    void SetUpSourceGrid();
 
     float ProgressCompute;
     float ProgressLoad;
@@ -379,6 +422,9 @@ private:
                         const double& EpsilonX, const unsigned short& usPW, const double& Momentum,
                           const double&  xMin, const double&  xMax, const double& fValShift);
 
+    void ResortData(double* input, DLM_MergeSort <unsigned, unsigned>& Sorter);
+    unsigned GetBoxId(double* particle);
+
     //evaluates the solution to the radial equation based on the numerical result and the computed phaseshift.
     //I.e. if Radius is within the computed range, we extrapolate based on the result. If Radius is outside
     //the computed range we use the shifted reference wave. If DivideByR==true, computed is R = u/r.
@@ -396,6 +442,9 @@ private:
     //computes the radius bin corresponding to Radius (for a certain l and S)
     unsigned GetRadBin(const double& Radius, const unsigned& uMomBin,
                        const unsigned short& usCh, const unsigned short& usPW);
+
+
+    //double SourceFunction(const double* Pars, const double& GridSize);
 
     //delete all variables that depend only on the number of momentum bins, b-bins and MaxPairs
     void DelMomIpMp();
@@ -437,9 +486,6 @@ private:
     double** CorrFun;
     double** CorrFunError;
 
-
-
-
     //!------------------------------------------------
 
     //!---TEST OUTPUT STUFF---
@@ -448,24 +494,6 @@ private:
 
 };
 
-class CATSboost{
 
-public:
-    CATSboost(double& g, double& bX, double& bY, double& bZ);
-    ~CATSboost();
-
-    void Boost(double* Vec);
-    void Boost(const double* InVec, double* OutVec);
-
-private:
-    const double gamma;
-    const double betaX;
-    const double betaY;
-    const double betaZ;
-
-    double GammaMomBeta;
-    double GammaVec0;
-    double GammaDevGammaPlusOne;
-};
 
 #endif // CATS_H

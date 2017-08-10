@@ -95,6 +95,7 @@ void DLM_SmearedCats::Correct(const bool& NewBinning){
             MomentumTrue = cat[0]->GetMomentum(uBinTrue);
             for(unsigned uCk=0; uCk<NumCk; uCk++){
                 if(RespMatrix[uCk] && cat[uCk]){
+//printf("EvalUsingEquation[uCk]=%i\n", EvalUsingEquation[uCk]);
                     switch(EvalUsingEquation[uCk]){
                         case 0 :    CkVal = cat[uCk]->EvalCorrFun(MomentumTrue);
                                     CkValErr = cat[uCk]->EvalCorrFunErr(MomentumTrue);
@@ -252,7 +253,8 @@ double DLM_SmearedCats::CkLednicky(const double& Momentum, const bool& SinOnly, 
     CkValue *= LambdaLedni;
     CkValue += (1.-LambdaLedni)*(1+aResidual*exp(-ResidualR*ResidualR*4.*Momentum*Momentum));
     //CkValue += aResidual*exp(-ResidualR*ResidualR*4.*Momentum*Momentum);
-
+//printf("ScattLenSin=%f; EffRangeSin=%f; GaussR=%f; LambdaLedni=%f; aResidual=%f; ResidualR=%f\n",
+//       ScattLenSin*197.327, EffRangeSin*197.327, GaussR*197.327, LambdaLedni, aResidual, ResidualR*197.327);
     return CkValue;
 }
 

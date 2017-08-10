@@ -15,17 +15,22 @@ CATS::CATS():
     pdgID[0] = 0;
     pdgID[1] = 0;
     NumCh = 0;
-    NumMomBins= 0;
+    NumMomBins = 0;
+    NumIpBins = 0;
     StartRad = 0.005*FmToNu;
     EpsilonProp = 5e-6;
     EpsilonConv = 5e-6;
     MaxRad = 32.*FmToNu;
     MaxRho = 16;
     ExcludeFailedConvergence = true;
+    GridMinDepth = 5;
+    GridMaxDepth = 0;
+    GridEpsilon = 0;
     NumPairs = 0;
     WeightIp = NULL;
     WeightIpError = NULL;
-    LoadingComplete = false;
+    LoadedData = false;
+    SourceGridReady = false;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 
@@ -58,7 +63,11 @@ CATS::CATS():
     RelativePosition = NULL;
     RelativeCosTheta = NULL;
     TotalPairMomentum = NULL;
+    LoadedPairsPerMomBin = NULL;
     LoadedPairsPerBin = NULL;
+    PairIpBin = NULL;
+    GridBoxId = NULL;
+    SourceGrid = NULL;
 
     ShortRangePotential = NULL;
 
@@ -96,23 +105,35 @@ CATS::~CATS(){
     }
 }
 
-void CATS::DelMomIpMp(){
-    if(!RelativeMomentum) return;
-    for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-        for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-            delete [] RelativeMomentum[uMomBin][uIpBin];
-            delete [] RelativePosition[uMomBin][uIpBin];
-            delete [] RelativeCosTheta[uMomBin][uIpBin];
-        }
-        delete [] RelativeMomentum[uMomBin];
-        delete [] RelativePosition[uMomBin];
-        delete [] RelativeCosTheta[uMomBin];
-    }
-    delete [] RelativeMomentum; RelativeMomentum=NULL;
-    delete [] RelativePosition; RelativePosition=NULL;
-    delete [] RelativeCosTheta; RelativeCosTheta=NULL;
 
-    RemoveTotPairMomCut();
+//N.B. While those guy seemingly do not depend in NumIpBins directly,
+//actually the length of the array we reserve for all those guys depends on it, thus
+//we will need to reinitialize all of them!
+void CATS::DelMomIpMp(){
+    if(RelativeMomentum){
+        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+            delete [] RelativeMomentum[uMomBin];
+            delete [] RelativePosition[uMomBin];
+            delete [] RelativeCosTheta[uMomBin];
+            delete [] PairIpBin[uMomBin];
+            delete [] GridBoxId[uMomBin];
+        }
+        delete [] RelativeMomentum; RelativeMomentum=NULL;
+        delete [] RelativePosition; RelativePosition=NULL;
+        delete [] RelativeCosTheta; RelativeCosTheta=NULL;
+        delete [] PairIpBin; PairIpBin=NULL;
+        delete [] GridBoxId; GridBoxId=NULL;
+    }
+
+
+    if(TotalPairMomentum){
+        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+            delete [] TotalPairMomentum[uMomBin];
+        }
+        delete [] TotalPairMomentum; TotalPairMomentum=NULL;
+        UseTotMomCut = false;
+    }
+
 }
 
 void CATS::DelIp(){
@@ -148,8 +169,8 @@ void CATS::DelMomChPw(){
 }
 
 void CATS::DelMom(){
-    if(!MomBinConverged) return;
-    delete [] MomBinConverged; MomBinConverged=NULL;
+    if(MomBinConverged) {delete [] MomBinConverged; MomBinConverged=NULL;}
+    if(LoadedPairsPerMomBin) {delete [] LoadedPairsPerMomBin; LoadedPairsPerMomBin = NULL;}
 }
 
 void CATS::DelMomIp(){
@@ -157,7 +178,6 @@ void CATS::DelMomIp(){
         for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
             delete [] CorrFun[uMomBin];
             delete [] CorrFunError[uMomBin];
-
         }
         delete [] CorrFun; CorrFun=NULL;
         delete [] CorrFunError; CorrFunError=NULL;
@@ -167,6 +187,15 @@ void CATS::DelMomIp(){
             delete [] LoadedPairsPerBin[uMomBin];
         }
         delete [] LoadedPairsPerBin; LoadedPairsPerBin=NULL;
+    }
+    if(SourceGrid){
+        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
+                if(SourceGrid[uMomBin][uIpBin]) delete SourceGrid[uMomBin][uIpBin];
+            }
+            delete [] SourceGrid[uMomBin];
+        }
+        delete [] SourceGrid; SourceGrid=NULL;
     }
 }
 
@@ -326,7 +355,8 @@ void CATS::SetMomBins(const unsigned& nummombins, const double* mombins){
         DelAllMom();
         NumMomBins = nummombins;
     }
-    LoadingComplete = false;
+    LoadedData = false;
+    SourceGridReady = false;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 
@@ -358,7 +388,8 @@ void CATS::SetMomBins(const unsigned& nummombins, const double& MinMom, const do
         DelAllMom();
         NumMomBins = nummombins;
     }
-    LoadingComplete = false;
+    LoadedData = false;
+    SourceGridReady = false;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 
@@ -383,7 +414,8 @@ void CATS::SetIpBins(const unsigned& numBbins, const double* imppar){
         DelAllIp();
         NumIpBins = numBbins;
     }
-    LoadingComplete = false;
+    LoadedData = false;
+    SourceGridReady = false;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 
@@ -410,7 +442,8 @@ void CATS::SetIpBins(const unsigned& numBbins, const double& MinImpPar, const do
         DelAllIp();
         NumIpBins = numBbins;
     }
-    LoadingComplete = false;
+    LoadedData = false;
+    SourceGridReady = false;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 
@@ -472,6 +505,8 @@ double CATS::GetEpsilonConv(){
 void CATS::SetMaxRad(const double& maxrad){
     if(MaxRad==fabs(maxrad*FmToNu)) return;
     MaxRad = fabs(maxrad*FmToNu);
+    LoadedData = false;
+    SourceGridReady = false;
     ComputedWaveFunction = false;
     ComputedCorrFunction = false;
 }
@@ -501,6 +536,38 @@ bool CATS::GetExcludeFailedBins(){
     return ExcludeFailedConvergence;
 }
 
+void CATS::SetGridMinDepth(const short& val){
+    if(val<0 || val>6) GridMinDepth=0;
+    else GridMinDepth=val;
+    SourceGridReady = false;
+    ComputedWaveFunction = false;
+    ComputedCorrFunction = false;
+}
+short CATS::GetGridMinDepth(){
+    return GridMinDepth;
+}
+void CATS::SetGridMaxDepth(const short& val){
+    if(val<5 || val>20) GridMaxDepth=0;
+    else GridMaxDepth=val;
+    SourceGridReady = false;
+    ComputedWaveFunction = false;
+    ComputedCorrFunction = false;
+}
+short CATS::GetGridManDepth(){
+    return GridMaxDepth;
+}
+void CATS::SetGridEpsilon(const double& val){
+    if(val<0 || val>0.125) GridEpsilon=0;
+    else GridEpsilon = val;
+    SourceGridReady = false;
+    ComputedWaveFunction = false;
+    ComputedCorrFunction = false;
+
+}
+double CATS::GetGridEpsilon(){
+    return GridEpsilon;
+}
+
 void CATS::SetMaxPairsPerBin(unsigned mpp){
     if(!mpp){
         printf("WARNING: MaxPairsPerBin cannot be zero, setting MaxPairsPerBin=1\n");
@@ -509,7 +576,8 @@ void CATS::SetMaxPairsPerBin(unsigned mpp){
     if(MaxPairsPerBin==mpp) return;
     DelMomIpMp();
     MaxPairsPerBin = mpp;
-    LoadingComplete = false;
+    LoadedData = false;
+    if(!UseAnalyticSource) SourceGridReady = false;
     if(!UseAnalyticSource) ComputedCorrFunction = false;
 }
 unsigned CATS::GetMaxPairsPerBin(){
@@ -523,7 +591,8 @@ void CATS::SetMaxPairsToRead(unsigned mpp){
     }
     if(MaxPairsToRead==mpp) return;
     MaxPairsToRead = mpp;
-    LoadingComplete = false;
+    LoadedData = false;
+    if(!UseAnalyticSource) SourceGridReady = false;
     if(!UseAnalyticSource) ComputedCorrFunction = false;
 }
 unsigned CATS::GetMaxPairsToRead(){
@@ -537,7 +606,7 @@ unsigned CATS::GetMaxPairsToRead(){
 //    }
 //    if(MaxPairsToLoad==mpp) return;
 //    MaxPairsToLoad = mpp;
-//    LoadingComplete = false;
+//    LoadedData = false;
 //    if(!UseAnalyticSource) ComputedCorrFunction = false;
 //}
 //unsigned CATS::GetMaxPairsToLoad(){
@@ -547,7 +616,8 @@ unsigned CATS::GetMaxPairsToRead(){
 void CATS::SetEventMixing(const bool& mix){
     if(EventMixing==mix) return;
     EventMixing = mix;
-    LoadingComplete = false;
+    LoadedData = false;
+    if(!UseAnalyticSource) SourceGridReady = false;
     if(!UseAnalyticSource) ComputedCorrFunction = false;
 }
 bool CATS::GetEventMixing(){
@@ -562,7 +632,8 @@ void CATS::SetBufferEventMix(const unsigned& bem){
     }
     if(BufferEventMix==bem) return;
     BufferEventMix = bem;
-    LoadingComplete = false;
+    LoadedData = false;
+    if(!UseAnalyticSource) SourceGridReady = false;
     if(!UseAnalyticSource) ComputedCorrFunction = false;
 }
 unsigned CATS::GetBufferEventMix(){
@@ -572,7 +643,8 @@ unsigned CATS::GetBufferEventMix(){
 void CATS::SetTauCorrection(const bool& tc){
     if(TauCorrection==tc) return;
     TauCorrection = tc;
-    LoadingComplete = false;
+    LoadedData = false;
+    if(!UseAnalyticSource) SourceGridReady = false;
     if(!UseAnalyticSource) ComputedCorrFunction = false;
 }
 bool CATS::GetTauCorrection(){
@@ -582,6 +654,7 @@ bool CATS::GetTauCorrection(){
 void CATS::SetUseAnalyticSource(const bool& val){
     if(UseAnalyticSource==val) return;
     UseAnalyticSource = val;
+    SourceGridReady = false;
     ComputedCorrFunction = false;
 }
 bool CATS::GetUseAnalyticSource(){
@@ -591,6 +664,7 @@ bool CATS::GetUseAnalyticSource(){
 void CATS::SetThetaDependentSource(const bool& val){
     if(ThetaDependentSource==val) return;
     ThetaDependentSource = val;
+    SourceGridReady = false;
     ComputedCorrFunction = false;
 }
 bool CATS::GetThetaDependentSource(){
@@ -612,14 +686,13 @@ void CATS::SetTotPairMomCut(const double& minval, const double& maxval){
     if(minval==MinTotPairMom && maxval==MaxTotPairMom){
         return;
     }
-    //if we set cut conditions outside of the loaded data, we have to reload
-    if(UseTotMomCut==true && LoadingComplete &&
-       (LoadedMinTotPairMom>minval || LoadedMaxTotPairMom<maxval) ){
-        LoadingComplete = false;
-    }
+
     MinTotPairMom = minval;
     MaxTotPairMom = maxval;
     UseTotMomCut = true;
+
+    if(!TotalPairMomentum) LoadedData = false;
+    SourceGridReady = false;
     ComputedCorrFunction = false;
 }
 void CATS::GetTotPairMomCut(double& minval, double& maxval){
@@ -627,19 +700,7 @@ void CATS::GetTotPairMomCut(double& minval, double& maxval){
     maxval = MaxTotPairMom;
 }
 void CATS::RemoveTotPairMomCut(){
-    MinTotPairMom = -1;
-    MaxTotPairMom = 1e100;
-    if(TotalPairMomentum){
-        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-                delete [] TotalPairMomentum[uMomBin][uIpBin];
-            }
-            delete [] TotalPairMomentum[uMomBin];
-        }
-        delete [] TotalPairMomentum; TotalPairMomentum=NULL;
-    }
     UseTotMomCut = false;
-    if(LoadedMinTotPairMom>0 || LoadedMaxTotPairMom<1e100) LoadingComplete = false;
 }
 
 void CATS::SetInputFileName(const char* fname){
@@ -650,7 +711,7 @@ void CATS::SetInputFileName(const char* fname){
     }
     if(InputFileName){
         //if this file was already loaded before
-        if(strcmp(InputFileName, fname)==0 && LoadingComplete){
+        if(strcmp(InputFileName, fname)==0 && LoadedData){
             return;
         }
         delete [] InputFileName;
@@ -659,7 +720,8 @@ void CATS::SetInputFileName(const char* fname){
 
     InputFileName = new char [StrLen+1];
     strcpy(InputFileName, fname);
-    LoadingComplete = false;
+    LoadedData = false;
+    if(!UseAnalyticSource) SourceGridReady = false;
     if(!UseAnalyticSource) ComputedCorrFunction = false;
 }
 
@@ -672,62 +734,63 @@ void CATS::GetInputFileName(char* fname){
 }
 
 unsigned CATS::GetNumPairsPerBin(const unsigned& uMomBin, const unsigned& uIpBin){
-    if(uMomBin>=NumMomBins || uIpBin>=NumIpBins || !LoadingComplete) return 0;
+    if(uMomBin>=NumMomBins || uIpBin>=NumIpBins || !LoadedData) return 0;
     return LoadedPairsPerBin[uMomBin][uIpBin];
 }
 
-void CATS::GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair,
+unsigned CATS::GetNumPairsPerBin(const unsigned& uMomBin){
+    if(uMomBin>=NumMomBins || !LoadedData) return 0;
+    return LoadedPairsPerMomBin[uMomBin];
+}
+
+void CATS::GetPairInfo(const unsigned& uMomBin, const unsigned& uWhichPair,
                      double& RelMom, double& RelPos, double& RelCosTh, double& TotMom){
     RelMom=0;
     RelPos=0;
     RelCosTh=0;
     TotMom=0;
-    if(!LoadingComplete) return;
+    if(!LoadedData) return;
     if(uMomBin>=NumMomBins) return;
-    if(uIpBin>=NumIpBins) return;
-    if(uWhichPair>=LoadedPairsPerBin[uMomBin][uIpBin]) return;
-    RelMom=RelativeMomentum[uMomBin][uIpBin][uWhichPair];
-    RelPos=RelativePosition[uMomBin][uIpBin][uWhichPair]*NuToFm;
-    RelCosTh=RelativeCosTheta[uMomBin][uIpBin][uWhichPair];
-    TotMom=UseTotMomCut?TotalPairMomentum[uMomBin][uIpBin][uWhichPair]:0;
+    if(uWhichPair>=LoadedPairsPerMomBin[uMomBin]) return;
+    RelMom=RelativeMomentum[uMomBin][uWhichPair];
+    RelPos=RelativePosition[uMomBin][uWhichPair]*NuToFm;
+    RelCosTh=RelativeCosTheta[uMomBin][uWhichPair];
+    TotMom=UseTotMomCut?TotalPairMomentum[uMomBin][uWhichPair]:0;
 }
-void CATS::GetPairInfo(const unsigned& uMomBin, const unsigned& uIpBin, const unsigned& uWhichPair, double* Output){
-    GetPairInfo(uMomBin,uIpBin,uWhichPair,
+void CATS::GetPairInfo(const unsigned& uMomBin, const unsigned& uWhichPair, double* Output){
+    GetPairInfo(uMomBin,uWhichPair,
                 Output[0],Output[1],Output[2],Output[3]);
 }
+
 unsigned CATS::GetLoadedPairs(const unsigned& WhichMomBin, const unsigned& WhichIpBin){
-    if(!LoadingComplete) return 0;
+    if(!LoadedData) return 0;
     if(WhichMomBin>=NumMomBins) return 0;
     if(WhichIpBin>=NumIpBins) return 0;
     return LoadedPairsPerBin[WhichMomBin][WhichIpBin];
 }
-unsigned CATS::GetRelativeMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
-    if(!LoadingComplete) return 0;
+unsigned CATS::GetRelativeMomentum(const unsigned& WhichMomBin, const unsigned& WhichParticle){
+    if(!LoadedData) return 0;
     if(WhichMomBin>=NumMomBins) return 0;
-    if(WhichIpBin>=NumIpBins) return 0;
-    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
-    return RelativeMomentum[WhichMomBin][WhichIpBin][WhichParticle];
+    if(WhichParticle>=LoadedPairsPerMomBin[WhichMomBin]) return 0;
+    return RelativeMomentum[WhichMomBin][WhichParticle];
 }
-unsigned CATS::GetRelativePosition(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
-    if(!LoadingComplete) return 0;
+unsigned CATS::GetRelativePosition(const unsigned& WhichMomBin, const unsigned& WhichParticle){
+    if(!LoadedData) return 0;
     if(WhichMomBin>=NumMomBins) return 0;
-    if(WhichIpBin>=NumIpBins) return 0;
-    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
-    return RelativePosition[WhichMomBin][WhichIpBin][WhichParticle]*NuToFm;
+    if(WhichParticle>=LoadedPairsPerMomBin[WhichMomBin]) return 0;
+    return RelativePosition[WhichMomBin][WhichParticle]*NuToFm;
 }
-unsigned CATS::GetRelativeCosTheta(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
-    if(!LoadingComplete) return 0;
+unsigned CATS::GetRelativeCosTheta(const unsigned& WhichMomBin, const unsigned& WhichParticle){
+    if(!LoadedData) return 0;
     if(WhichMomBin>=NumMomBins) return 0;
-    if(WhichIpBin>=NumIpBins) return 0;
-    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
-    return RelativeCosTheta[WhichMomBin][WhichIpBin][WhichParticle];
+    if(WhichParticle>=LoadedPairsPerMomBin[WhichMomBin]) return 0;
+    return RelativeCosTheta[WhichMomBin][WhichParticle];
 }
-unsigned CATS::GetTotalPairMomentum(const unsigned& WhichMomBin, const unsigned& WhichIpBin, const unsigned& WhichParticle){
-    if(!LoadingComplete) return 0;
+unsigned CATS::GetTotalPairMomentum(const unsigned& WhichMomBin, const unsigned& WhichParticle){
+    if(!LoadedData) return 0;
     if(WhichMomBin>=NumMomBins) return 0;
-    if(WhichIpBin>=NumIpBins) return 0;
-    if(WhichParticle>=LoadedPairsPerBin[WhichMomBin][WhichIpBin]) return 0;
-    return TotalPairMomentum[WhichMomBin][WhichIpBin][WhichParticle];
+    if(WhichParticle>=LoadedPairsPerMomBin[WhichMomBin]) return 0;
+    return TotalPairMomentum[WhichMomBin][WhichParticle];
 }
 
 double CATS::GetCorrFun(const unsigned& WhichMomBin){
@@ -963,12 +1026,14 @@ void CATS::SetShortRangePotential(const unsigned& usCh, const unsigned& usPW,
 void CATS::RemoveAnaSource(){
     if(!AnaSourcePar) return;
     AnalyticSource = NULL;
+    SourceGridReady = false;
     ComputedCorrFunction = false;
 }
 void CATS::SetAnaSource(double (*AS)(double*), double* Pars){
     if(AnalyticSource==AS && AnaSourcePar==Pars) return;
     AnalyticSource = AS;
     AnaSourcePar = Pars;
+    SourceGridReady = false;
     ComputedCorrFunction = false;
 }
 
@@ -1006,7 +1071,8 @@ void CATS::KillTheCat(const int& Options){
 
     switch(Options){
     case kSourceChanged:
-        LoadingComplete *= UseAnalyticSource;
+        LoadedData *= UseAnalyticSource;
+        SourceGridReady = false;
         ComputedCorrFunction = false;
         break;
     case kPotentialChanged:
@@ -1014,7 +1080,8 @@ void CATS::KillTheCat(const int& Options){
         ComputedCorrFunction = false;
         break;
     case kAllChanged:
-        LoadingComplete *= UseAnalyticSource;
+        LoadedData *= UseAnalyticSource;
+        SourceGridReady = false;
         ComputedWaveFunction = false;
         ComputedCorrFunction = false;
         break;
@@ -1023,13 +1090,23 @@ void CATS::KillTheCat(const int& Options){
 
     //in case we have a cut on the total momentum, but the array to save it is not present
     //than the data needs to be reloaded
-    if(UseTotMomCut && !TotalPairMomentum) LoadingComplete=false;
-
+    if(UseTotMomCut && !TotalPairMomentum) {LoadedData=false; SourceGridReady=false;}
+/*
+    //reallocate the memory in the following cases: we do not have the ParticleContainer we need
+    printf("\033[1;37m Stage 1:\033[0m Setting up the computing grid...\n");
+    if( !SourceGridReady ){
+        SetUpSourceGrid();
+        printf("          \033[1;32mDone!\033[0m\n");
+    }
+    else{
+        printf("          \033[0mThis was done before.\n");
+    }
+*/
     printf("\033[1;37m Stage 1:\033[0m Obtaining the source...");
-    if( (!LoadingComplete) && !UseAnalyticSource ){
+    if( (!LoadedData) && !UseAnalyticSource ){
         printf(" Loading from the data-file...\n");
         LoadData();
-        if(LoadingComplete){
+        if(LoadedData){
             printf("          \033[1;37mLoading status:\033[1;32m Success!\033[1;37m\n"
                     "          Number of pairs loaded: %u\033[0m\n",
                     NumPairs);
@@ -1049,11 +1126,17 @@ void CATS::KillTheCat(const int& Options){
         printf("          \033[0mUsing data-defined source.\n");
     }
 
-    printf("\033[1;37m Stage 2:\033[0m Computing the wave-function...\n");
+    printf("\033[1;37m Stage 2:\033[0m Setup the computing grid...\n");
+    if(!SourceGridReady){
+        SetUpSourceGrid();
+    }
+    printf("          \033[1;32mDone!\033[0m\n");
+
+    printf("\033[1;37m Stage 3:\033[0m Computing the wave-function...\n");
     if(!ComputedWaveFunction) ComputeWaveFunction();
     printf("          \033[1;32mDone!\033[0m\n");
 
-    printf("\033[1;37m Stage 3:\033[0m Computing the correlation function...\n");
+    printf("\033[1;37m Stage 4:\033[0m Computing the correlation function...\n");
     if(!ComputedCorrFunction) FoldSourceAndWF();
     printf("          \033[1;32mDone!\033[0m\n");
 
@@ -1474,35 +1557,36 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
     double Time;
 
     bool ProgressBar=false;
-    LoadingComplete = false;
+    LoadedData = false;
+    SourceGridReady = false;
     char* cdummy = new char [512];
 
+    double ParticleVector[2];
+
+    unsigned MaxTotNumPairs = MaxPairsPerBin*NumMomBins*NumIpBins;
+
     if(!RelativeMomentum){
-        RelativeMomentum = new double** [NumMomBins];
-        RelativePosition = new double** [NumMomBins];
-        RelativeCosTheta = new double** [NumMomBins];
-        if(UseTotMomCut) TotalPairMomentum = new double** [NumMomBins];
+        RelativeMomentum = new double* [NumMomBins];
+        RelativePosition = new double* [NumMomBins];
+        RelativeCosTheta = new double* [NumMomBins];
+        PairIpBin = new unsigned* [NumMomBins];
+        GridBoxId = new unsigned* [NumMomBins];
         for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-            RelativeMomentum[uMomBin] = new double* [NumIpBins];
-            RelativePosition[uMomBin] = new double* [NumIpBins];
-            RelativeCosTheta[uMomBin] = new double* [NumIpBins];
-            if(UseTotMomCut) TotalPairMomentum[uMomBin] = new double* [NumIpBins];
-            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-                RelativeMomentum[uMomBin][uIpBin] = new double [MaxPairsPerBin];
-                RelativePosition[uMomBin][uIpBin] = new double [MaxPairsPerBin];
-                RelativeCosTheta[uMomBin][uIpBin] = new double [MaxPairsPerBin];
-                if(UseTotMomCut) TotalPairMomentum[uMomBin][uIpBin] = new double [MaxPairsPerBin];
-            }
+            RelativeMomentum[uMomBin] = new double [MaxTotNumPairs];
+            RelativePosition[uMomBin] = new double [MaxTotNumPairs];
+            RelativeCosTheta[uMomBin] = new double [MaxTotNumPairs];
+            PairIpBin[uMomBin] = new unsigned [MaxTotNumPairs];
+            GridBoxId[uMomBin] = new unsigned [MaxTotNumPairs];
         }
+    }
+    if(!LoadedPairsPerMomBin){
+        LoadedPairsPerMomBin = new unsigned [NumMomBins];
     }
 
     if(UseTotMomCut && !TotalPairMomentum){
-        TotalPairMomentum = new double** [NumMomBins];
+        TotalPairMomentum = new double* [NumMomBins];
         for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-            TotalPairMomentum[uMomBin] = new double* [NumIpBins];
-            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-                TotalPairMomentum[uMomBin][uIpBin] = new double [MaxPairsPerBin];
-            }
+            TotalPairMomentum[uMomBin] = new double [MaxTotNumPairs];
         }
     }
 
@@ -1517,6 +1601,13 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
             LoadedPairsPerBin[uMomBin][uIpBin] = 0;
         }
     }
+
+    if(!LoadedPairsPerMomBin)
+        LoadedPairsPerMomBin = new unsigned [NumMomBins];
+    for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+        LoadedPairsPerMomBin[uMomBin] = 0;
+    }
+
 
     if(!WeightIp) WeightIp = new double [NumIpBins];
     if(!WeightIpError) WeightIpError = new double [NumIpBins];
@@ -1640,10 +1731,6 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                 bAllBinsAreFull *= LoadedPairsPerBin[uMomBin][uIpBin]>=MaxPairsPerBin;
             }
         }
-        if(bAllBinsAreFull){
-            printf("HI!\n");
-            break;
-        }
         fscanf(InFile,"%i %i %lf %lf",&EventNumber,&NumPartInEvent,&ImpPar,&fDummy);
 //!We consider the imp par positive!
         ImpPar = fabs(ImpPar);
@@ -1682,16 +1769,15 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                 if(NumPairs>=MaxTotPairs) break;
 //                if(NumPairs>=MaxPairsToLoad) break;
 
-        bAllBinsAreFull = true;
-        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-                bAllBinsAreFull *= LoadedPairsPerBin[uMomBin][uIpBin]>=MaxPairsPerBin;
-            }
-        }
-        if(bAllBinsAreFull){
-            printf("HI2!\n");
-            break;
-        }
+                bAllBinsAreFull = true;
+                for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+                    for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
+                        bAllBinsAreFull *= LoadedPairsPerBin[uMomBin][uIpBin]>=MaxPairsPerBin;
+                    }
+                }
+                if(bAllBinsAreFull){
+                    break;
+                }
 
                 //this is the case in which we have found a suitable particle pair
                 if( (ParticleID[WhichIpBin][iePart]==pdgID[0] && ParticleID[WhichIpBin][NePart]==pdgID[1]) ||
@@ -1786,7 +1872,7 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
 
                     bool Selected = true;
 
-                    if(RelPosCom>256 || RelPosCom!=RelPosCom || RelPosCom==0 || RelMomCom==0){
+                    if(RelPosCom>MaxRad*NuToFm || RelPosCom!=RelPosCom || RelPosCom==0 || RelMomCom==0){
                         Selected = false;
                     }
 
@@ -1814,10 +1900,28 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                         continue;
                     }
 
-                    RelativeMomentum[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = RedMomComMeV;
-                    RelativePosition[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = RelPosCom*FmToNu;
-                    RelativeCosTheta[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = RelCosTh;
-                    if(UseTotMomCut) TotalPairMomentum[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = TotMom*1000;
+//LoadedPairsPerBin[WhichMomBin][WhichIpBin]
+                    RelativeMomentum[WhichMomBin][LoadedPairsPerMomBin[WhichMomBin]] = RedMomComMeV;
+                    RelativePosition[WhichMomBin][LoadedPairsPerMomBin[WhichMomBin]] = RelPosCom*FmToNu;
+                    RelativeCosTheta[WhichMomBin][LoadedPairsPerMomBin[WhichMomBin]] = RelCosTh;
+                    if(UseTotMomCut) TotalPairMomentum[WhichMomBin][LoadedPairsPerMomBin[WhichMomBin]] = TotMom*1000;
+
+                    ParticleVector[0] = RelativePosition[WhichMomBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]];
+                    ParticleVector[1] = RelativeCosTheta[WhichMomBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]];
+
+                    //GridBoxId[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] =
+                    //    SourceGrid[WhichMomBin][WhichIpBin]->GetBoxId(ParticleVector);
+                    //GridBoxId[WhichMomBin][WhichIpBin][LoadedPairsPerBin[WhichMomBin][WhichIpBin]] = GetBoxId(ParticleVector);
+
+                    PairIpBin[WhichMomBin][LoadedPairsPerMomBin[WhichMomBin]] = WhichIpBin;
+                    GridBoxId[WhichMomBin][LoadedPairsPerMomBin[WhichMomBin]] = GetBoxId(ParticleVector);
+                    //printf("GridBoxId[%u][%u] = %u\n",WhichMomBin,LoadedPairsPerMomBin[WhichMomBin],
+                    //       GridBoxId[WhichMomBin][LoadedPairsPerMomBin[WhichMomBin]]);
+
+                    //if(ThetaDependentSource)
+                        //ParticleContainer2D[WhichMomBin][WhichIpBin]->AddParticle(RelPosCom,RelCosTh);
+                    //else
+                        //ParticleContainer1D[WhichMomBin][WhichIpBin]->AddParticle(RelPosCom);
 
                     //counting the number of pairs coming from the same event. This information is needed when
                     //reweighting the correlation function in the different impact parameter bins
@@ -1827,6 +1931,7 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
                     }
 
                     LoadedPairsPerBin[WhichMomBin][WhichIpBin]++;
+                    LoadedPairsPerMomBin[WhichMomBin]++;
                     NumPairs++;
 
                 }//if(...)
@@ -1857,7 +1962,6 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
         }
         ProgressLoad = pMaxPairsPerBin>ProgressLoad?pMaxPairsPerBin:ProgressLoad;
         */
-
         pTotal = int(ProgressLoad*100);
         if(pTotal!=pTotalOld){
             Time = double(dlmTimer.Stop())/1000000.;
@@ -1870,8 +1974,6 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
             cout << flush;
             pTotalOld = pTotal;
         }
-
-
     }//while(!feof(InFile))
 
     if(ProgressBar){
@@ -1884,14 +1986,14 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
         printf("\033[1;31m          WARNING:\033[0m There were no same-events pairs found! The computation cannot proceed!\n");
     }
     else{
-        LoadingComplete = true;
+        LoadedData = true;
         if(UseTotMomCut){
             LoadedMinTotPairMom = MinTotPairMom;
             LoadedMaxTotPairMom = MaxTotPairMom;
         }
     }
 
-    if(LoadingComplete && EventMixing){
+    if(LoadedData && EventMixing){
         for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
             WeightIp[uIpBin] = TotalNumSePairs?double(NumSePairsIp[uIpBin])/double(TotalNumSePairs):0;
             if(NumIpBins==1){
@@ -1913,6 +2015,7 @@ void CATS::LoadData(const unsigned short& NumBlankHeaderLines){
     }
 
     fclose(InFile);
+
 /*
     for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
         delete [] pIpMomBin[uMomBin];
@@ -1964,138 +2067,155 @@ void CATS::FoldSourceAndWF(){
         }
     }
     else return;
-    UseAnalyticSource?FoldAnaSourceAndWF():FoldDataSourceAndWF();
-}
 
-void CATS::FoldAnaSourceAndWF(){
-//!OPTIMIZE?
-    const unsigned NumRadPts = ThetaDependentSource?256:1024;
-    //const unsigned NumRadPts = 1024;
-    const double RadStepLen = MaxRad/double(NumRadPts-1)*NuToFm;
-    const unsigned NumCosThPts = ThetaDependentSource?256:1;
-    const double CosThStepLen = 2./double(NumCosThPts-1);
-    double& Momentum = AnaSourcePar[0];
-    double& Radius = AnaSourcePar[1];
-    double& CosTheta = AnaSourcePar[2];
-
+    double Momentum;
+    double Radius;
+    double CosTheta;
+    unsigned NumGridPts;
+    double SourceVal;
+    double WaveFunVal;
     for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
         Momentum = 0.5*(MomBin[uMomBin]+MomBin[uMomBin+1]);
-        for(unsigned uRad=0; uRad<NumRadPts; uRad++){
-            Radius = 0.5*RadStepLen+RadStepLen*double(uRad);
-            if(ThetaDependentSource){
-                for(unsigned uCT=0; uCT<NumCosThPts; uCT++){
-                    CosTheta = CosThStepLen*double(uCT)-1;
-                    CorrFun[uMomBin][NumIpBins] += RadStepLen*CosThStepLen*AnalyticSource(AnaSourcePar)*
-                    EffectiveFunctionTheta(Radius*FmToNu, Momentum, CosTheta);
-                }
-            }
-            else{
-                CorrFun[uMomBin][NumIpBins] += RadStepLen*AnalyticSource(AnaSourcePar)*
-                EffectiveFunction(Radius*FmToNu, Momentum);
-            }
-        }
-    }
-    ComputedCorrFunction = true;
-}
 
-void CATS::FoldDataSourceAndWF(){
-    double Radius;
-    double Momentum;
-    double CosTheta;
-    double TotWF;
+        CorrFun[uMomBin][NumIpBins] = 0;
+        CorrFunError[uMomBin][NumIpBins] = 0;
 
-    if(!LoadingComplete){
-        printf("ERROR in CATS::FoldDataSourceAndWF(): There is no data loaded!\n");
-        return;
-    }
-
-    unsigned NumPairsUsed=0;
-
-    for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-        unsigned NumberOfPairs = 0;
-        double* Stdev;
-        Stdev = new double [NumIpBins+1];
         for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-            NumPairsUsed=0;
-            Stdev[uIpBin] = 0;
             CorrFun[uMomBin][uIpBin] = 0;
-            if(!MomBinConverged[uMomBin] && ExcludeFailedConvergence){
-                CorrFunError[uMomBin][uIpBin] = 0;
-                continue;
-            }
-            for(unsigned uPair=0; uPair<LoadedPairsPerBin[uMomBin][uIpBin]; uPair++){
-                if(UseTotMomCut &&
-                   (TotalPairMomentum[uMomBin][uIpBin][uPair]<MinTotPairMom || TotalPairMomentum[uMomBin][uIpBin][uPair]>MaxTotPairMom))
-                   continue;
-                Radius = RelativePosition[uMomBin][uIpBin][uPair];
-                Momentum = RelativeMomentum[uMomBin][uIpBin][uPair];
-                CosTheta = RelativeCosTheta[uMomBin][uIpBin][uPair];
+            CorrFunError[uMomBin][uIpBin] = 0;
+            NumGridPts = SourceGrid[uMomBin][uIpBin]?SourceGrid[uMomBin][uIpBin]->GetNumEndNodes():0;
+            for(unsigned uGrid=0; uGrid<NumGridPts; uGrid++){
+                Radius = SourceGrid[uMomBin][uIpBin]->GetParValue(uGrid, 0)*FmToNu;
+                //this should return zero in case of !ThetaDependentSource,
+                //maybe worth doing a QA to make sure
+                CosTheta = SourceGrid[uMomBin][uIpBin]->GetParValue(uGrid, 1);
+                SourceVal = SourceGrid[uMomBin][uIpBin]->GetGridValue(uGrid);
+                if(!SourceVal) continue;
+                WaveFunVal =    ThetaDependentSource?
+                                EffectiveFunctionTheta(Radius, Momentum, CosTheta):
+                                EffectiveFunction(Radius, Momentum);
+                CorrFun[uMomBin][uIpBin] += SourceVal*WaveFunVal;
+                CorrFunError[uMomBin][uIpBin] += pow(SourceVal*WaveFunVal*SourceGrid[uMomBin][uIpBin]->GetGridError(uGrid),2);
+            }//uGrid
+            CorrFunError[uMomBin][uIpBin] = sqrt(CorrFunError[uMomBin][uIpBin]);
 
-                TotWF = ThetaDependentSource?   EffectiveFunctionTheta(Radius, Momentum, CosTheta):
-                                                EffectiveFunction(Radius, Momentum);
-                CorrFun[uMomBin][uIpBin] += TotWF;
-
-                Stdev[uIpBin] += TotWF*TotWF;
-
-                //if the event mixing is switched off, the total correlation function
-                //is evaluated separately
-                if(!EventMixing){
-                    CorrFun[uMomBin][NumIpBins] += TotWF;
-                    Stdev[NumIpBins] += TotWF*TotWF;
-                }
-
-                NumPairsUsed++;
-
-            }//for(unsigned uPair=0; uPair<LoadedPairsPerMomBin[uMomBin]; uPair++){
-            //if there are too few entries, the error is set basically to infinity
-            if(NumPairsUsed<8){
-                CorrFun[uMomBin][uIpBin] =  NumPairsUsed?
-                                            CorrFun[uMomBin][uIpBin]/double(NumPairsUsed):0;
-                CorrFunError[uMomBin][uIpBin] = 100;
-            }
-            else{
-                CorrFun[uMomBin][uIpBin] /= double(NumPairsUsed);
-                Stdev[uIpBin] /= double(NumPairsUsed);
-                Stdev[uIpBin] = sqrt(Stdev[uIpBin]);
-                CorrFunError[uMomBin][uIpBin] = Stdev[uIpBin]/sqrt(double(NumPairsUsed));
-            }
-            NumberOfPairs += NumPairsUsed;
-            //in case of event mixing, the total correlation function is calculated based on the Weights
-            if(EventMixing){
+            if(!UseAnalyticSource){
                 CorrFun[uMomBin][NumIpBins] += WeightIp[uIpBin]*CorrFun[uMomBin][uIpBin];
                 CorrFunError[uMomBin][NumIpBins] += pow(WeightIpError[uIpBin]*CorrFunError[uMomBin][uIpBin],2) +
                                                     pow(WeightIpError[uIpBin]*CorrFun[uMomBin][uIpBin],2) +
                                                     pow(WeightIp[uIpBin]*CorrFunError[uMomBin][uIpBin],2);
             }
-
-        }//for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
-
-        if(!MomBinConverged && ExcludeFailedConvergence){
-            CorrFun[uMomBin][NumIpBins] = 0;
-            CorrFunError[uMomBin][NumIpBins] = 0;
-        }
-        //if the event mixing is switched off, the total correlation function
-        //is evaluated separately
-        else if(!EventMixing){
-            //if there are too few entries, the error is set basically to infinity
-            if(NumberOfPairs<8){
-                CorrFun[uMomBin][NumIpBins] = NumberOfPairs?CorrFun[uMomBin][NumIpBins]/double(NumberOfPairs):0;
-                CorrFunError[uMomBin][NumIpBins] = 100;
-            }
             else{
-                CorrFun[uMomBin][NumIpBins] /= double(NumberOfPairs);
-                Stdev[NumIpBins] /= double(NumberOfPairs);
-                Stdev[NumIpBins] = sqrt(Stdev[NumIpBins]);
-                CorrFunError[uMomBin][NumIpBins] = Stdev[NumIpBins]/sqrt(double(NumberOfPairs));
+                CorrFun[uMomBin][NumIpBins] = CorrFun[uMomBin][uIpBin];
+                CorrFunError[uMomBin][NumIpBins] = CorrFunError[uMomBin][uIpBin];
+            }
+
+            //currently the analytic source cannot possibly have any dependence on the impact parameter
+            //hence we compute directly the final correlation function
+            if(UseAnalyticSource) break;
+        }
+
+    }
+    ComputedCorrFunction = true;
+
+}
+
+void CATS::SortAllData(){
+    for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+        if(!LoadedPairsPerMomBin[uMomBin]) continue;
+        DLM_MergeSort < unsigned, unsigned > SortTool;
+        SortTool.SetData(GridBoxId[uMomBin],LoadedPairsPerMomBin[uMomBin]);
+        SortTool.MergeSort();
+
+        SortTool.GetSortedData(GridBoxId[uMomBin],GridBoxId[uMomBin]);
+
+        ResortData(RelativeMomentum[uMomBin], SortTool);
+        ResortData(RelativePosition[uMomBin], SortTool);
+        ResortData(RelativeCosTheta[uMomBin], SortTool);
+        if(UseTotMomCut) ResortData(TotalPairMomentum[uMomBin], SortTool);
+    }
+}
+
+void CATS::SetUpSourceGrid(){
+    double LIMIT = GridEpsilon;
+    if(!LIMIT){
+        if(ThetaDependentSource) LIMIT=1./2048.;
+        else LIMIT=1./1024.;
+    }
+    short MAXDEPTH = GridMaxDepth;
+    if(!MAXDEPTH){
+        if(ThetaDependentSource) MAXDEPTH=10;
+        else MAXDEPTH=14;
+    }
+    if(ThetaDependentSource && MAXDEPTH>12){
+        MAXDEPTH = 12;
+    }
+    short DIM = ThetaDependentSource?2:1;
+    unsigned MAXGRIDPTS = uipow(2,MAXDEPTH*DIM);
+
+    if(!UseAnalyticSource){
+        if(EventMixing && NumIpBins>1){
+            for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+                for(unsigned uPair=0; uPair<LoadedPairsPerMomBin[uMomBin]; uPair++){
+                    GridBoxId[uMomBin][uPair] += PairIpBin[uMomBin][uPair]*MAXGRIDPTS;
+                }
             }
         }
-        //if(EventMixing)
-        else{
-            CorrFunError[uMomBin][NumIpBins] = sqrt(CorrFunError[uMomBin][NumIpBins]);
+
+        SortAllData();
+
+        if(EventMixing && NumIpBins>1){
+            for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+                for(unsigned uPair=0; uPair<LoadedPairsPerMomBin[uMomBin]; uPair++){
+                    GridBoxId[uMomBin][uPair] -= (GridBoxId[uMomBin][uPair]/MAXGRIDPTS)*MAXGRIDPTS;
+                }
+            }
         }
-        delete [] Stdev;
-    }//for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-    ComputedCorrFunction = true;
+    }
+
+    double* MEAN = new double[DIM];
+    double* LENGTH = new double[DIM];
+    MEAN[0] = MaxRad*0.5*NuToFm;
+    LENGTH[0] = MaxRad*NuToFm;
+    if(ThetaDependentSource){
+        MEAN[1] = 0;
+        LENGTH[1] = 2;
+    }
+
+    if(SourceGrid){
+        //printf("ERROR: Bug in CATS! SetUpSourceGrid says that SourceGrid should not be initialized at this stage!\n");
+        for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
+                if(SourceGrid[uMomBin][uIpBin]) delete SourceGrid[uMomBin][uIpBin];
+            }
+            delete [] SourceGrid[uMomBin];
+        }
+        delete [] SourceGrid; SourceGrid=NULL;
+    }
+    SourceGrid = new CATSelder** [NumMomBins];
+    for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
+        if(UseAnalyticSource){
+            SourceGrid[uMomBin] = new CATSelder* [1];
+            SourceGrid[uMomBin][0] = new CATSelder(DIM, GridMinDepth, MAXDEPTH, LIMIT, MEAN, LENGTH,
+                        AnalyticSource, AnaSourcePar, NULL, 0);
+        }
+        else{
+            SourceGrid[uMomBin] = new CATSelder* [NumIpBins];
+            unsigned ArrayPosition = 0;
+            for(unsigned uIpBin=0; uIpBin<NumIpBins; uIpBin++){
+                SourceGrid[uMomBin][uIpBin] = NULL;
+                if(!LoadedPairsPerBin[uMomBin][uIpBin]) continue;
+                SourceGrid[uMomBin][uIpBin] = new CATSelder(DIM, GridMinDepth, MAXDEPTH, LIMIT, MEAN, LENGTH,
+                        NULL, NULL, &GridBoxId[uMomBin][ArrayPosition], LoadedPairsPerBin[uMomBin][uIpBin]);
+                ArrayPosition += LoadedPairsPerBin[uMomBin][uIpBin];
+            }
+        }
+    }
+
+    SourceGridReady = true;
+
+    delete [] MEAN;
+    delete [] LENGTH;
 }
 
 double CATS::CoulombPotential(const double& Radius){
@@ -2191,6 +2311,98 @@ double CATS::NewtonRapson(double (CATS::*Function)(const double&, const double&,
     }
     printf("WARNING: The NewtonRapson root-finder failed!\n");
     return xVal;
+}
+
+void CATS::ResortData(double* input, DLM_MergeSort <unsigned, unsigned>& Sorter){
+    unsigned NumOfEl = Sorter.GetNumOfEl();
+    double* Temp;
+    Temp = new double[NumOfEl];
+    for(unsigned uEl=0; uEl<NumOfEl; uEl++){
+        Temp[uEl] = input[Sorter.GetKey()[uEl]];
+    }
+    for(unsigned uEl=0; uEl<NumOfEl; uEl++){
+        input[uEl] = Temp[uEl];
+    }
+    delete [] Temp;
+}
+
+//btw, if the range is outside the limits, the return value will be equal
+//to the NumberOfBoxes. Used somewhere else this might lead to potential segmentation faults, so
+//make sure to take care of that!
+unsigned CATS::GetBoxId(double* particle){
+    const short Dim = ThetaDependentSource?2:1;
+    double ParentMean[Dim];
+    double ParentLen[Dim];
+
+    ParentMean[0] = MaxRad*0.5;
+    ParentLen[0] = MaxRad;
+    if(ThetaDependentSource){
+        ParentMean[1] = 0;
+        ParentLen[1] = 2;
+    }
+
+    short MAXDEPTH = GridMaxDepth;
+    if(!MAXDEPTH){
+        if(ThetaDependentSource) MAXDEPTH=10;
+        else MAXDEPTH=14;
+    }
+    if(ThetaDependentSource && MAXDEPTH>12){
+        MAXDEPTH = 12;
+    }
+
+    short ChildDepth=0;
+    unsigned ChildFirstID = 0;
+    unsigned ChildLastID = uipow(2,Dim*MAXDEPTH);
+    const unsigned NumSubNodes = uipow(2,Dim);
+    double ChildMean[Dim];
+    double ChildLen[Dim];
+    unsigned ChildNumBoxes;
+
+    //we want to divide our total interval in two for each parameter on the grid.
+    //in order to keep track in which "quadrant" we are, we introduce a very simple counter WhichPart for each
+    //of the parameters, that can only take values 0 or 1. Each time WhichPart[x] is increased to 2, than it is set to zero
+    //and WhichPart[x+1] is increased, i.e. we continue to iterate over the next parameter.
+    char WhichPart[Dim];
+    bool ThisBox;
+
+    while( ChildDepth<MAXDEPTH ){
+        ChildNumBoxes = (ChildLastID-ChildFirstID+1)/NumSubNodes;
+        //ChildFirstID = ParentFirstID;
+        //this is the first node
+        for(short sDim=0; sDim<Dim; sDim++){
+            WhichPart[sDim] = 0;
+            ChildMean[sDim] = ParentMean[sDim]-ParentLen[sDim]*0.25;
+            ChildLen[sDim] = ParentLen[sDim]*0.5;
+        }
+        ChildDepth++;
+        for(unsigned uSub=0; uSub<NumSubNodes; uSub++){
+            ChildLastID = ChildFirstID+ChildNumBoxes-1;
+            ThisBox = true;
+            //see if the particles in located in one of the following boxes
+            for(short sDim=0; sDim<Dim; sDim++){
+                ThisBox *= (particle[sDim]>=ChildMean[sDim]-0.5*ChildLen[sDim] &&
+                            particle[sDim]<=ChildMean[sDim]+0.5*ChildLen[sDim]);
+            }
+            //when we find the correct bin, we break out of the loop
+            if(ThisBox){
+                break;
+            }
+            ChildFirstID += ChildNumBoxes;
+            for(short sDim=0; sDim<Dim; sDim++){
+                WhichPart[sDim] = (WhichPart[sDim]+1)%2;
+                ChildMean[sDim] = ParentMean[sDim]-ParentLen[sDim]*0.25+0.5*ParentLen[sDim]*WhichPart[sDim];
+                if(WhichPart[sDim]) break;
+            }
+        }
+        //update the values for the parent
+        //ParentFirstID = ChildFirstID;
+        //ParentLastID = ChildLastID;
+        for(short sDim=0; sDim<Dim; sDim++){
+            ParentMean[sDim] = ChildMean[sDim];
+            ParentLen[sDim] = ChildLen[sDim];
+        }
+    }
+    return ChildFirstID;
 }
 
 double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
@@ -2354,34 +2566,4 @@ unsigned CATS::GetIpBin(const double& bVal){
 unsigned CATS::GetRadBin(const double& Radius, const unsigned& uMomBin,
                          const unsigned short& usCh, const unsigned short& usPW){
     return GetBin(Radius, WaveFunRad[uMomBin][usCh][usPW], SavedWaveFunBins[uMomBin][usCh][usPW]);
-}
-
-CATSboost::CATSboost(double& g, double& bX, double& bY, double& bZ):gamma(g),betaX(bX),betaY(bY),betaZ(bZ){
-
-}
-
-CATSboost::~CATSboost(){
-
-}
-
-void CATSboost::Boost(double* Vec){
-    GammaMomBeta = gamma*(Vec[1]*betaX + Vec[2]*betaY + Vec[3]*betaZ);
-    GammaVec0 = gamma*Vec[0];
-    GammaDevGammaPlusOne = gamma/(gamma+1);
-
-    Vec[1] += betaX*(GammaDevGammaPlusOne*GammaMomBeta - GammaVec0);
-    Vec[2] += betaY*(GammaDevGammaPlusOne*GammaMomBeta - GammaVec0);
-    Vec[3] += betaZ*(GammaDevGammaPlusOne*GammaMomBeta - GammaVec0);
-    Vec[0] = GammaVec0 - GammaMomBeta;
-}
-
-void CATSboost::Boost(const double* InVec, double* OutVec){
-    GammaMomBeta = gamma*(InVec[1]*betaX + InVec[2]*betaY + InVec[3]*betaZ);
-    GammaVec0 = gamma*InVec[0];
-    GammaDevGammaPlusOne = gamma/(gamma+1);
-
-    OutVec[1] += betaX*(GammaDevGammaPlusOne*GammaMomBeta - GammaVec0);
-    OutVec[2] += betaY*(GammaDevGammaPlusOne*GammaMomBeta - GammaVec0);
-    OutVec[3] += betaZ*(GammaDevGammaPlusOne*GammaMomBeta - GammaVec0);
-    OutVec[0] = GammaVec0 - GammaMomBeta;
 }
