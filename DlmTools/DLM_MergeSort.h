@@ -162,6 +162,7 @@ public:
         NumBoxesPairs = new int [4000000];
     }
     ~DLM_MergeSort(){
+        ClearMem();
         for(long i=0; i<30; i++){
             delete [] TimeInfo1[i];
         }

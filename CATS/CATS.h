@@ -1,12 +1,9 @@
 //!CATS:          Correlation Analysis Tools using the Schrödinger equation
-//!Version:       1.1 (27 June 2017)
-//!Author:        Dimitar Lubomirov Mihaylov
+//!Version:       2.0 (4 September 2017)
+//!Description:   First official β version
+//!Author:        Dimitar Lubomirov Mihaylov (Technical University of Munich)
 //!Support:       dimitar.mihaylov(at)mytum.de
 //!Documentation: to follow
-
-//Notes for the next upgrade (1.2):
-//add the option to buffer the information about the source-data
-//in bins. This can save time when reevaluating C(k).
 
 #ifndef CATS_H
 #define CATS_H
@@ -15,6 +12,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "gsl_sf_coulomb.h"
 #include "gsl_sf_bessel.h"
@@ -61,6 +59,7 @@ public:
     void SetNumChannels(const unsigned short& numCh);
     unsigned short GetNumChannels();
 
+    //!N.B. here usCh plays the role of the spin quantum number
     void SetNumPW(const unsigned short& usCh, const unsigned short& numPW);
     unsigned short GetNumPW(const unsigned short& usCh);
 
@@ -141,8 +140,10 @@ public:
     //void SetMaxPairsToLoad(unsigned mpp);
     //unsigned GetMaxPairsToLoad();
 
-    void SetEventMixing(const bool& mix);
-    bool GetEventMixing();
+    //void SetEventMixing(const bool& mix);
+    //bool GetEventMixing();
+    void SetMixingDepth(const unsigned short& mix);
+    unsigned short GetMixingDepth();
 
     void SetBufferEventMix(const unsigned& bem);
     unsigned GetBufferEventMix();
@@ -156,15 +157,15 @@ public:
     unsigned GetNumPairsPerBin(const unsigned& uMomBin, const unsigned& uIpBin);
     unsigned GetNumPairsPerBin(const unsigned& uMomBin);
 
-    void GetPairInfo(const unsigned& uMomBin, const unsigned& uWhichPair,
+    void GetPairInfo(const unsigned& uWhichPair,
                      double& RelMom, double& RelPos, double& RelCosTh, double& TotMom);
-    void GetPairInfo(const unsigned& uMomBin, const unsigned& uWhichPair, double* Output);
+    void GetPairInfo(const unsigned& uWhichPair, double* Output);
 
     unsigned GetLoadedPairs(const unsigned& WhichMomBin, const unsigned& WhichIpBin);
-    unsigned GetRelativeMomentum(const unsigned& WhichMomBin, const unsigned& WhichParticle);
-    unsigned GetRelativePosition(const unsigned& WhichMomBin, const unsigned& WhichParticle);
-    unsigned GetRelativeCosTheta(const unsigned& WhichMomBin, const unsigned& WhichParticle);
-    unsigned GetTotalPairMomentum(const unsigned& WhichMomBin, const unsigned& WhichParticle);
+    unsigned GetRelativeMomentum(const unsigned& WhichParticle);
+    unsigned GetRelativePosition(const unsigned& WhichParticle);
+    unsigned GetRelativeCosTheta(const unsigned& WhichParticle);
+    unsigned GetTotalPairMomentum(const unsigned& WhichParticle);
 
 //    void SetLogFileName(const char* fname);
 //    void GetLogFileName(char* fname);
@@ -179,7 +180,7 @@ public:
     //returns the CorrFun evaluated for some MomBin
     double GetCorrFunErr(const unsigned& WhichMomBin);
     //the same, but the value of the corresponding Momentum as saved in Momentum
-    double GetCorrFunErr(const unsigned& WhichMomBin, double& Momentum);
+    double GetCorrFunErr(const double& Momentum);
     //evaluates Ck at this point based on interpolation
     double EvalCorrFunErr(const double& Momentum);
 
@@ -210,6 +211,8 @@ public:
 
     void RemoveShortRangePotential();
     void RemoveShortRangePotential(const unsigned& usCh, const unsigned& usPW);
+    //Pars[0] should be the radius, Pars[1] should be the momentum.
+    //!Pars should be an array with at least 2 elements
     void SetShortRangePotential(const unsigned& usCh, const unsigned& usPW,
                            double (*pot)(double* Pars), double* Pars);
 
@@ -239,7 +242,7 @@ private:
     double RedMass;
     int pdgID[2];
 
-    //Number of polarizations
+    //Number of channels
     unsigned short NumCh;
     //Number of partial waves for each polarization
     unsigned short* NumPW;
@@ -264,11 +267,11 @@ private:
     //assumes that 'b' and 'k' are not strongly correlated in the range if interest. In case of a small correlation the user
     //is advised to make further investigation of possible systematical errors.
     //By default this option is switched off!
-    bool EventMixing;
+    //bool EventMixing;
 
     //in case of EventMixing, this variable specifies what is the max. number of particles pairs to mix.
     //increasing this number will improve the error, but the computational cost goes up.
-    unsigned BufferEventMix;
+    unsigned short MixingDepth;
     bool TauCorrection;
     bool UseAnalyticSource;
     bool ThetaDependentSource;
@@ -340,14 +343,22 @@ private:
     unsigned* LoadedPairsPerMomBin;
     //in bins of momentum/ImpactParameter
     unsigned** LoadedPairsPerBin;
-    //in bins of momentum/all particle pairs
-    double** RelativeMomentum;
-    double** RelativePosition;
-    double** RelativeCosTheta;
-    double** TotalPairMomentum;
-    unsigned** PairIpBin;
-    unsigned** GridBoxId;
-    CATSelder*** SourceGrid;
+    //all particle pairs
+    double* RelativeMomentum;
+    double* RelativePosition;
+    double* RelativeCosTheta;
+    double* TotalPairMomentum;
+    unsigned* PairMomBin;
+    unsigned* PairIpBin;
+    int64_t* GridBoxId;
+
+    //for all particle pairs
+    CATSelder* BaseSourceGrid;
+    //in bins of momentum only
+    CATSelder** kSourceGrid;
+    double** WaveFunction2;
+    //in bins of momentum/ImpactParameter
+    CATSelder*** kbSourceGrid;
 
     //CATScontainerOLD*** ParticleContainer1D;
     //CATScontainerOLD*** ParticleContainer2D;
@@ -399,7 +410,9 @@ private:
                                const unsigned short& AzQN, const unsigned short& Pol);
 
     void ComputeWaveFunction();
+    void ComputeTotWaveFunction(const bool& ReallocateTotWaveFun);
     void LoadData(const unsigned short& NumBlankHeaderLines=3);
+    unsigned LoadDataBuffer(const unsigned& WhichIpBin, CatsDataBuffer* KittyBuffer);
     void FoldSourceAndWF();
     void SortAllData();
     void SetUpSourceGrid();
@@ -422,7 +435,20 @@ private:
                         const double& EpsilonX, const unsigned short& usPW, const double& Momentum,
                           const double&  xMin, const double&  xMax, const double& fValShift);
 
-    void ResortData(double* input, DLM_MergeSort <unsigned, unsigned>& Sorter);
+    //void ResortData(double* input, DLM_MergeSort <int64_t, unsigned>& Sorter);
+    //void ResortData(unsigned* input, DLM_MergeSort <int64_t, unsigned>& Sorter);
+    template <class Type> void ResortData(Type* input, DLM_MergeSort <int64_t, unsigned>& Sorter){
+        unsigned NumOfEl = Sorter.GetNumOfEl();
+        Type* Temp;
+        Temp = new Type[NumOfEl];
+        for(unsigned uEl=0; uEl<NumOfEl; uEl++){
+            Temp[uEl] = input[Sorter.GetKey()[uEl]];
+        }
+        for(unsigned uEl=0; uEl<NumOfEl; uEl++){
+            input[uEl] = Temp[uEl];
+        }
+        delete [] Temp;
+    }
     unsigned GetBoxId(double* particle);
 
     //evaluates the solution to the radial equation based on the numerical result and the computed phaseshift.
@@ -482,9 +508,12 @@ private:
     bool* MomBinConverged;//bins of mom, marked as true in case the num. comp. failed and this bin should not be used
 
     //in bins of momentum/ImpactParameter
-    //CorrFun[...][NumIpBins] is the total correlation function
-    double** CorrFun;
-    double** CorrFunError;
+    double** kbCorrFun;
+    double** kbCorrFunErr;
+
+    //in bins of momentum
+    double* kCorrFun;
+    double* kCorrFunErr;
 
     //!------------------------------------------------
 
