@@ -2384,22 +2384,22 @@ double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
         printf("ERROR: There is a bug inside EvalWaveFunctionU! Contact the developer!");
         return 0;
     }
-    double* WFU = WaveFunctionU[uMomBin][usCh][usPW];
-    double* WFR = WaveFunRad[uMomBin][usCh][usPW];
+
     unsigned& SWFB = SavedWaveFunBins[uMomBin][usCh][usPW];
     //double& MaxSavedRad = WFR[SWFB-1];
 
     unsigned RadBin = GetRadBin(Radius, uMomBin, usCh, usPW);
-    double MultFactor = DivideByR?1./(Radius+1e-64):1;
-
-    double DeltaWFR = WFR[RadBin+1]-WFR[RadBin];
-    if(!DeltaWFR){
-        DeltaWFR = 1-64;
-        printf("WARNING: DeltaWFR==0, which might point to a bug! Please contact the developers!\n");
-    }
 
     //make a linear extrapolation
     if(RadBin<SWFB-1){
+        double* WFU = WaveFunctionU[uMomBin][usCh][usPW];
+        double* WFR = WaveFunRad[uMomBin][usCh][usPW];
+        double MultFactor = DivideByR?1./(Radius+1e-64):1;
+        double DeltaWFR = WFR[RadBin+1]-WFR[RadBin];
+        if(!DeltaWFR){
+            DeltaWFR = 1-64;
+            printf("WARNING: DeltaWFR==0, which might point to a bug! Please contact the developers!\n");
+        }
         return WFU[RadBin]*MultFactor+(WFU[RadBin+1]*MultFactor-WFU[RadBin]*MultFactor)*(Radius-WFR[RadBin])/DeltaWFR;
     }
     else{
