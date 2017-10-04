@@ -191,6 +191,11 @@ public:
     double GetPhaseShift(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW);
     double EvalPhaseShift(const double& Momentum, const unsigned short& usCh, const unsigned short& usPW);
 
+    unsigned GetNumRadialWFpts(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW);
+    double GetRadialWaveFunction(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW, const unsigned& WhichRadBin);
+    double EvalRadialWaveFunction(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW, const double& Radius,
+                                  const bool& DevideByR=true);
+
     //The momentum in the WhichMomBin-th bin
     double GetMomentum(const unsigned& WhichMomBin);
     double GetMomBinLowEdge(const unsigned& WhichMomBin);
@@ -230,6 +235,7 @@ public:
     //have changed. By default it assumes that they have not.
     //!Thus run CATS with KillTheCat(KillOptions) if you have changed anything!
     void KillTheCat(const int& Options=kNothingChanged);
+    void ComputeTheRadialWaveFunction();
     //!------------------------------------------------
 
     enum KillOptions { kNothingChanged, kSourceChanged, kPotentialChanged, kAllChanged };
@@ -455,13 +461,13 @@ private:
     //I.e. if Radius is within the computed range, we extrapolate based on the result. If Radius is outside
     //the computed range we use the shifted reference wave. If DivideByR==true, computed is R = u/r.
     //N.B. The result would differ from EvalWaveFunctionU/Radius due to the extrapolation done.
-    double EvalWaveFunctionU(const double& Radius, const double& Momentum,
+    double EvalWaveFunctionU(const unsigned& uMomBin, const double& Radius,
                              const unsigned short& usCh, const unsigned short& usPW, const bool& DivideByR);
-    double EffectiveFunction(const double& Radius, const double& Momentum, const unsigned short& usCh);
-    double EffectiveFunction(const double& Radius, const double& Momentum);
+    double EffectiveFunction(const unsigned& uMomBin, const double& Radius, const unsigned short& usCh);
+    double EffectiveFunction(const unsigned& uMomBin, const double& Radius);
 
-    double EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usCh);
-    double EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta);
+    double EffectiveFunctionTheta(const unsigned& uMomBin, const double& Radius, const double& CosTheta, const unsigned short& usCh);
+    double EffectiveFunctionTheta(const unsigned& uMomBin, const double& Radius, const double& CosTheta);
 
     //computes the momentum bin corresponding to Momentum
     unsigned GetBin(const double& Value, const double* Range, const unsigned& NumBins);

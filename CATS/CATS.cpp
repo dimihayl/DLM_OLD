@@ -935,6 +935,21 @@ double CATS::EvalPhaseShift(const double& Momentum, const unsigned short& usCh, 
             (InterpolRange[1]-InterpolRange[0]);
 }
 
+unsigned CATS::GetNumRadialWFpts(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW){
+    return SavedWaveFunBins[WhichMomBin][usCh][usPW];
+}
+
+double CATS::GetRadialWaveFunction(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW, const unsigned& WhichRadBin){
+    if(NumMomBins<=WhichMomBin || NumCh<=usCh || NumPW[usCh]<=usPW || SavedWaveFunBins[WhichMomBin][usCh][usPW]<=WhichRadBin) return 0;
+    return WaveFunctionU[WhichMomBin][usCh][usPW][WhichRadBin];
+}
+
+double CATS::EvalRadialWaveFunction(const unsigned& WhichMomBin, const unsigned short& usCh, const unsigned short& usPW, const double& Radius,
+                                    const bool& DevideByR){
+    if(NumMomBins<=WhichMomBin || NumCh<=usCh || NumPW[usCh]<=usPW) return 0;
+    return EvalWaveFunctionU(WhichMomBin, Radius, usCh, usPW, DevideByR);
+}
+
 double CATS::GetMomentum(const unsigned& WhichMomBin){
     if(NumMomBins<=WhichMomBin) return 0;
     return 0.5*(MomBin[WhichMomBin]+MomBin[WhichMomBin+1]);
@@ -1125,6 +1140,13 @@ void CATS::KillTheCat(const int& Options){
 
     printf("\n");
 }
+
+void CATS::ComputeTheRadialWaveFunction(){
+    if(!NumMomBins) {printf("ERROR: The momentum bins are not defined!\n"); return;}
+    ComputeWaveFunction();
+}
+
+
 
 void CATS::ComputeWaveFunction(){
     //Reserve memory for the output
@@ -1548,7 +1570,7 @@ void CATS::ComputeTotWaveFunction(const bool& ReallocateTotWaveFun){
             WaveFunction2[uMomBin] = new double [NumGridPts];
     }
 
-    double Momentum;
+    //double Momentum;
     double Radius;
     double CosTheta;
 
@@ -1562,13 +1584,13 @@ void CATS::ComputeTotWaveFunction(const bool& ReallocateTotWaveFun){
     DLM_Timer dlmTimer;
 
     for(unsigned uMomBin=0; uMomBin<NumMomBins; uMomBin++){
-        Momentum = GetMomentum(uMomBin);
+        //Momentum = GetMomentum(uMomBin);
         for(unsigned uGrid=0; uGrid<NumGridPts; uGrid++){
             Radius = BaseSourceGrid->GetParValue(uGrid, 0)*FmToNu;
             CosTheta = BaseSourceGrid->GetParValue(uGrid, 1);
             WaveFunction2[uMomBin][uGrid] = ThetaDependentSource?
-                                            EffectiveFunctionTheta(Radius, Momentum, CosTheta):
-                                            EffectiveFunction(Radius, Momentum);
+                                            EffectiveFunctionTheta(uMomBin, Radius, CosTheta):
+                                            EffectiveFunction(uMomBin, Radius);
 
             CurrentStep = double(uMomBin)*double(NumGridPts)+double(uGrid+1);
             Progress = CurrentStep/TotalSteps;
@@ -2377,9 +2399,10 @@ unsigned CATS::GetBoxId(double* particle){
     return ChildFirstID;
 }
 
-double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
+double CATS::EvalWaveFunctionU(const unsigned& uMomBin, const double& Radius,
                                 const unsigned short& usCh, const unsigned short& usPW, const bool& DivideByR){
-    unsigned uMomBin = GetMomBin(Momentum);
+    //unsigned uMomBin = GetMomBin(Momentum);
+    double Momentum = GetMomentum(uMomBin);
     if(uMomBin>=NumMomBins){
         printf("ERROR: There is a bug inside EvalWaveFunctionU! Contact the developer!");
         return 0;
@@ -2407,17 +2430,18 @@ double CATS::EvalWaveFunctionU(const double& Radius, const double& Momentum,
     }
 }
 
-double CATS::EffectiveFunction(const double& Radius, const double& Momentum, const unsigned short& usCh){
+double CATS::EffectiveFunction(const unsigned& uMomBin, const double& Radius, const unsigned short& usCh){
     double Result;
     double OldResult=100;
     double TotalResult=0;
+    double Momentum = GetMomentum(uMomBin);
 
     for(unsigned short usPW=0; usPW<1000; usPW++){
         //wave function symmetrization
         if( IdenticalParticles && (usPW+usCh)%2 ) continue;
         //numerical solution, no computation result for zero potential
         if(usPW<NumPW[usCh] && ShortRangePotential[usCh][usPW]){
-            Result = EvalWaveFunctionU(Radius, Momentum, usCh, usPW, true);
+            Result = EvalWaveFunctionU(uMomBin, Radius, usCh, usPW, true);
             TotalResult += double(2*usPW+1)*Result*Result;
         }
         else{
@@ -2433,15 +2457,15 @@ double CATS::EffectiveFunction(const double& Radius, const double& Momentum, con
     return TotalResult*(1+IdenticalParticles);
 }
 
-double CATS::EffectiveFunction(const double& Radius, const double& Momentum){
+double CATS::EffectiveFunction(const unsigned& uMomBin, const double& Radius){
     double TotWF=0;
     for(unsigned short usCh=0; usCh<NumCh; usCh++){
-        TotWF += EffectiveFunction(Radius, Momentum, usCh)*ChannelWeight[usCh];
+        TotWF += EffectiveFunction(uMomBin, Radius, usCh)*ChannelWeight[usCh];
     }
     return TotWF;
 }
 
-double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta, const unsigned short& usCh){
+double CATS::EffectiveFunctionTheta(const unsigned& uMomBin, const double& Radius, const double& CosTheta, const unsigned short& usCh){
     double Result1;
     double Result2;
     double OldResult1=100;
@@ -2449,6 +2473,7 @@ double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum
     double TotalResultRe=0;
     double TotalResultIm=0;
     double TotalResult=0;
+    double Momentum = GetMomentum(uMomBin);
 
     short oddness;
 
@@ -2456,7 +2481,7 @@ double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum
         //wave function symmetrization
         if( IdenticalParticles && (usPW+usCh)%2 ) continue;
         if(usPW<NumPW[usCh] && ShortRangePotential[usCh][usPW]){
-            Result1 = double(2*usPW+1)*EvalWaveFunctionU(Radius, Momentum, usCh, usPW, true)*gsl_sf_legendre_Pl(usPW,CosTheta);
+            Result1 = double(2*usPW+1)*EvalWaveFunctionU(uMomBin, Radius, usCh, usPW, true)*gsl_sf_legendre_Pl(usPW,CosTheta);
         }
         else{
             Result1 = double(2*usPW+1)*ReferencePartialWave(Radius, Momentum, usPW)/(Radius+1e-64)*gsl_sf_legendre_Pl(usPW,CosTheta);
@@ -2469,7 +2494,7 @@ double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum
             //wave function symmetrization
             if( IdenticalParticles && (usPW2+usCh)%2 ) continue;
             if(usPW2<NumPW[usCh] && ShortRangePotential[usCh][usPW2]){
-                Result2 = double(2*usPW2+1)*EvalWaveFunctionU(Radius, Momentum, usCh, usPW2, true)*gsl_sf_legendre_Pl(usPW2,CosTheta);
+                Result2 = double(2*usPW2+1)*EvalWaveFunctionU(uMomBin, Radius, usCh, usPW2, true)*gsl_sf_legendre_Pl(usPW2,CosTheta);
             }
             else{
                 Result2 = double(2*usPW2+1)*ReferencePartialWave(Radius, Momentum, usPW2)/(Radius+1e-64)*gsl_sf_legendre_Pl(usPW2,CosTheta);
@@ -2495,10 +2520,10 @@ double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum
     return TotalResult*(1+IdenticalParticles);
 }
 
-double CATS::EffectiveFunctionTheta(const double& Radius, const double& Momentum, const double& CosTheta){
+double CATS::EffectiveFunctionTheta(const unsigned& uMomBin, const double& Radius, const double& CosTheta){
     double TotWF=0;
     for(unsigned short usCh=0; usCh<NumCh; usCh++){
-        TotWF += EffectiveFunctionTheta(Radius, Momentum, CosTheta, usCh)*ChannelWeight[usCh];
+        TotWF += EffectiveFunctionTheta(uMomBin, Radius, CosTheta, usCh)*ChannelWeight[usCh];
     }
     return TotWF;
 }
